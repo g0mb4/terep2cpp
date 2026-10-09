@@ -9,10 +9,10 @@
  * script: comma separated frame:scancode pairs (scancode | 0x80 = release)
  * ppmdir: write each frame as fNNNN.ppm there (only frame n with DUMP_FRAME=n)
  */
-#include <limits.h>
-#include <stdlib.h>
+#include <climits>
+#include <cstdlib>
 #include <unistd.h>
-#include "host.h"
+#include "host.hpp"
 #include "../tests/dsmask.h"
 
 static void write_ppm(const char *path)
@@ -49,7 +49,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (host_load_dataseg(data) != 0)
+    if (!host_load_dataseg(data))
         return 1;
     if (chdir(track) != 0) {
         perror(track);
@@ -61,7 +61,7 @@ int main(int argc, char **argv)
     }
     printf("cars=%d\n", G->num_cars);
 
-    /* DUMP_FRAME=n: write only that frame's image */
+    // DUMP_FRAME=n: write only that frame's image
     int only = getenv("DUMP_FRAME") ? atoi(getenv("DUMP_FRAME")) : -1;
     for (int fr = 0; fr < frames; fr++) {
         for (const char *s = script; *s;) {
@@ -74,8 +74,8 @@ int main(int argc, char **argv)
             while (*s == ',')
                 s++;
         }
-        host_step();                    /* Esc is ignored here */
-        printf("%d %08lx %08lx\n", fr, crc32_buf(screen(), 64000), ds_masked_crc((const uint8_t *)G));
+        host_step();                    // Esc is ignored here
+        printf("%d %08lx %08lx\n", fr, crc32_buf(screen(), 64000), ds_masked_crc(reinterpret_cast<const uint8_t *>(G)));
         if (*ppmdir && (only < 0 || only == fr)) {
             char fn[PATH_MAX + 16];
             snprintf(fn, sizeof fn, "%s/f%04d.ppm", ppmdir, fr);

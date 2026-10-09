@@ -3,7 +3,7 @@
  * The register writes are kept; the host decides what opl_write does
  * (the Win16 port and the test host ignore them).
  */
-#include "terep.h"
+#include "terep.hpp"
 
 /* operator offset of each OPL2 channel (orig 1000:592c) */
 static const uint8_t opl_op_offset[9] = { 0, 1, 2, 8, 9, 0x0a, 0x10, 0x11, 0x12 };
@@ -28,7 +28,7 @@ static void opl_set_patch(uint8_t channel, const uint8_t *patch)
 }
 
 /* orig 1000:57e0 */
-void sound_init(void)
+void sound_init()
 {
     opl_write(0x01, 0x20);              /* enable waveform select */
     opl_write(0x08, 0x00);
@@ -68,19 +68,17 @@ static void engine_note(uint8_t channel, uint16_t freq, uint8_t level)
  * orig f_do_the_sound_thing (was 1000:0653..) */
 void engine_sound(int car_index, uint8_t channel)
 {
-    Car *car = car_get(car_index);
-    int32_t front = (car->wheel_speed[0] + car->wheel_speed[1]) >> 14;
-    int32_t rear = (car->wheel_speed[2] + car->wheel_speed[3]) >> 14;
-    int32_t speed = rear;
-
-    if (car->drive == 0)
-        ;                               /* rear wheel drive: rear */
-    else if (car->drive == 1)
-        speed = front;
-    else
-        speed = (front + rear) >> 1;
+    Car &car = car_get(car_index);
+    int32_t front = (car.wheel_speed[0] + car.wheel_speed[1]) >> 14;
+    int32_t rear = (car.wheel_speed[2] + car.wheel_speed[3]) >> 14;
+    int32_t speed;
+    switch (car.drive) {
+    case Car::REAR:  speed = rear; break;
+    case Car::FRONT: speed = front; break;
+    default:         speed = (front + rear) >> 1; break;
+    }
 
     uint16_t pitch = (uint16_t)abs16((int16_t)speed) + 0x1030;
-    uint16_t level = (uint16_t)abs16((int16_t)(car->throttle >> 9)) + 0x2c;
+    uint16_t level = (uint16_t)abs16((int16_t)(car.throttle >> 9)) + 0x2c;
     engine_note(channel, pitch, (uint8_t)level);
 }

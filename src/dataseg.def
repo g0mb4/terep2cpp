@@ -1,7 +1,7 @@
 ; Layout of the original 64 KB data segment (memdumps/data.bin + runtime state).
 ; OFFSET TYPE NAME[COUNT] ; comment
 ; Names with a "tmp_" prefix are scratch variables of the original code that
-; the C port keeps in locals; they stay here only to document the layout.
+; the port keeps in locals; they stay here only to document the layout.
 
 0x0000 char     title_text[0x4b]          ; "-DEFORMERS- ATOMIC VEHICLE SIMULATION SYSTEM ..."
 0x004b char     subtitle_text[0x1f]       ; "WORK-IN-PROGRESS DEMO VERSION"
@@ -13,12 +13,12 @@
 0x007e uint8_t  cam_mode[2]               ; per player view, 0..4 (F1..F5 / F6)
 0x0080 ChaseCam chase_cam[2]              ; free-floating camera state, one per player
 0x00a4 uint16_t player_car[2]             ; car index followed by each view (Tab / Q)
-0x00aa Vec3pos  eye                       ; camera position (16.16)
+0x00aa Pos      eye                       ; camera position (16.16)
 0x00c2 int16_t  eye_angles[3]             ; roll, pitch, yaw of the camera
 0x00c8 int16_t  cars_center[3]            ; average car position (camera 5)
 0x00ce int16_t  view_matrix[9]            ; Q15 rotation, world -> camera
-0x00e0 Vec3fx   cam_axis_x                ; axes of the followed car (cameras 1 and 2)
-0x00ec Vec3fx   cam_axis_y
+0x00e0 Vec3     cam_axis_x                ; axes of the followed car (cameras 1 and 2)
+0x00ec Vec3     cam_axis_y
 0x011c int16_t  chase_height              ; numpad +/-
 0x011e int16_t  chase_distance            ; numpad / and *
 0x0120 int16_t  near_clip                 ; points closer than this are not projected
@@ -66,7 +66,7 @@
 0x5b65 uint8_t  unk_5b65[0x55]
 0x5bba int16_t  num_cars
 0x5bbc uint16_t car_ofs[10]               ; DS offset of each loaded car (cars are stored back to back)
-0x5bd0 uint8_t  car_pool[0x7530]          ; the car files themselves, see Car in terep.h
+0x5bd0 uint8_t  car_pool[0x7530]          ; the car files themselves, see Car in terep.hpp
 0xd100 int16_t  tmp_trig[6]
 0xd10c int16_t  sin_table[1025]           ; sin of 0..90 deg, Q15
 0xd90e uint16_t atan_table[257]           ; atan(i/256), binary degrees
@@ -98,7 +98,7 @@
 0xe998 int16_t  unk_e998[4]
 0xe9a0 int32_t  ground_n1[2]              ; contact frame (Q31 sin/cos pairs, low word 0)
 0xe9a8 int32_t  ground_n2[2]
-0xe9b0 Vec3fx   tmp_wheel_dir
+0xe9b0 Vec3     tmp_wheel_dir
 0xe9bc uint16_t tmp_slip_angle
 0xe9be int32_t  tmp_slip_sin
 0xe9c2 int32_t  tmp_slip_cos
@@ -122,8 +122,8 @@
 0xea49 uint8_t  surface_damp_shift[16]
 0xea59 int32_t  surface_max_load[16]
 0xea99 uint16_t hull_plane_bytes
-0xea9b HullPlane hull_normal[16]
-0xeb5b Vec3pos  hull_point[16]
+0xea9b Vec3     hull_normal[16]           ; collision planes of the car being tested: normal
+0xeb5b Pos      hull_point[16]            ; and a point on each
 0xec1b uint16_t hull_tri_count
 0xec1d uint16_t hull_tri[7][3]            ; car vertices forming the collision hull
 0xec50 uint16_t unk_ec50

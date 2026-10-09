@@ -6,15 +6,15 @@
  * triangles and the height is interpolated linearly inside the triangle.
  * Coordinates are 8.8: high byte = cell, low byte = position in the cell.
  */
-#include "terep.h"
+#include "terep.hpp"
 
-typedef struct TerrainSample {
+struct TerrainSample {
     uint16_t cell;      /* x | y << 8 */
     int16_t  base;      /* height of the triangle's corner */
     int16_t  dz_u, dz_v;/* height deltas along the two triangle edges */
     uint8_t  u, v;      /* position inside the triangle, 0..128 */
-    int      upper;     /* far triangle (corner at x+1, y+1) */
-} TerrainSample;
+    bool     upper;     /* far triangle (corner at x+1, y+1) */
+};
 
 static TerrainSample terrain_sample(uint16_t x, uint16_t y)
 {
@@ -43,18 +43,17 @@ static TerrainSample terrain_sample(uint16_t x, uint16_t y)
 
 /* The original solves a general 2x2 system (orig 1000:256b / 1000:52d4)
  * but always with the same 0x80 x 0x80 basis, so it reduces to this. */
-static int16_t terrain_interpolate(const TerrainSample *s)
+static int16_t terrain_interpolate(const TerrainSample &s)
 {
-    int32_t num = (int32_t)s->dz_u * (int16_t)(s->u * 0x80)
-                + (int32_t)s->dz_v * (int16_t)(s->v * 0x80);
-    return (int16_t)(s->base + (int16_t)(num / 0x4000));
+    int32_t num = (int32_t)s.dz_u * (int16_t)(s.u * 0x80)
+                + (int32_t)s.dz_v * (int16_t)(s.v * 0x80);
+    return (int16_t)(s.base + (int16_t)(num / 0x4000));
 }
 
 /* orig 1000:25c5 */
 int16_t terrain_height(uint16_t x, uint16_t y)
 {
-    TerrainSample s = terrain_sample(x, y);
-    return terrain_interpolate(&s);
+    return terrain_interpolate(terrain_sample(x, y));
 }
 
 /* Same as terrain_height, but also records what the physics needs about
@@ -70,5 +69,5 @@ int16_t ground_probe(uint16_t x, uint16_t y)
         G->ground_slope_x = (int16_t)-s.dz_u;
         G->ground_slope_y = (int16_t)-s.dz_v;
     }
-    return terrain_interpolate(&s);
+    return terrain_interpolate(s);
 }

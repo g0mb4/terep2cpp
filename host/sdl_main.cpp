@@ -6,14 +6,14 @@
  *
  * Esc quits.  The AdLib sound is not played.
  */
-#include <stdlib.h>
+#include <cstdlib>
 #include <unistd.h>
 #include <SDL.h>
-#include "host.h"
+#include "host.hpp"
 
-#define SCALE 3
+constexpr int SCALE = 3;
 
-/* SDL scancode -> PC keyboard scancode (set 1), what the game expects. */
+// SDL scancode -> PC keyboard scancode (set 1), what the game expects.
 static uint8_t pc_scancode(SDL_Scancode s)
 {
     static const struct { SDL_Scancode sdl; uint8_t pc; } map[] = {
@@ -56,9 +56,9 @@ static uint8_t pc_scancode(SDL_Scancode s)
         { SDL_SCANCODE_KP_0, 0x52 }, { SDL_SCANCODE_INSERT, 0x52 },
         { SDL_SCANCODE_KP_PERIOD, 0x53 }, { SDL_SCANCODE_DELETE, 0x53 },
     };
-    for (size_t i = 0; i < sizeof map / sizeof map[0]; i++)
-        if (map[i].sdl == s)
-            return map[i].pc;
+    for (const auto &m : map)
+        if (m.sdl == s)
+            return m.pc;
     return 0;
 }
 
@@ -74,7 +74,7 @@ int main(int argc, char **argv)
     if (a < argc)
         track = argv[a];
 
-    if (host_load_dataseg(data) != 0)
+    if (!host_load_dataseg(data))
         return 1;
     if (chdir(track) != 0) {
         perror(track);
@@ -102,38 +102,38 @@ int main(int argc, char **argv)
 
     const uint64_t freq = SDL_GetPerformanceFrequency();
     uint64_t next_tick = SDL_GetPerformanceCounter(), next_frame = next_tick;
-    int running = 1;
+    bool running = true;
     while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT)
-                running = 0;
+                running = false;
             else if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
                 uint8_t sc = pc_scancode(e.key.keysym.scancode);
                 if (sc == 0x01 && e.type == SDL_KEYDOWN)
-                    running = 0;
+                    running = false;
                 else if (sc)
-                    game_key((uint8_t)(e.type == SDL_KEYUP ? sc | 0x80 : sc));
+                    game_key(e.type == SDL_KEYUP ? sc | 0x80 : sc);
             }
         }
 
         uint64_t now = SDL_GetPerformanceCounter();
-        while (now >= next_tick) {          /* 120 Hz physics */
+        while (now >= next_tick) {          // 120 Hz physics
             physics_tick();
             next_tick += freq / 120;
         }
-        if (now >= next_frame) {            /* 60 Hz display */
+        if (now >= next_frame) {            // 60 Hz display
             next_frame += freq / 60;
             if (now > next_frame + freq / 4)
-                next_frame = now;           /* do not try to catch up after a stall */
+                next_frame = now;           // do not try to catch up after a stall
             if (game_frame())
-                running = 0;
+                running = false;
             const uint8_t *scr = screen();
             for (int i = 0; i < 64000; i++)
                 memcpy(&rgb[i * 3], host_palette(scr[i]), 3);
-            SDL_UpdateTexture(tex, NULL, rgb, 320 * 3);
+            SDL_UpdateTexture(tex, nullptr, rgb, 320 * 3);
             SDL_RenderClear(ren);
-            SDL_RenderCopy(ren, tex, NULL, NULL);
+            SDL_RenderCopy(ren, tex, nullptr, nullptr);
             SDL_RenderPresent(ren);
         } else {
             SDL_Delay(1);

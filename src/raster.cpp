@@ -8,13 +8,14 @@
  * its edges into the per-scanline tables span_x / span_a / span_b and then
  * fills every scanline between span_top and span_bottom.
  */
-#include "terep.h"
+#include <utility>
+#include "terep.hpp"
 
 /* Texture used by draw_textured (the original's FS segment). */
 const uint8_t *raster_texture;
 
 /* Clear the frame buffer to colour 0xff.  orig 1000:2b98 */
-void clear_screen(void)
+void clear_screen()
 {
     memset(screen(), 0xff, 64000);
 }
@@ -42,52 +43,52 @@ int16_t edge_lerp(int16_t da, int16_t va, int16_t db, int16_t vb)
  * Clipping against the view rectangle
  * ---------------------------------------------------------------------- */
 
-enum { CLIP_LEFT, CLIP_RIGHT, CLIP_TOP, CLIP_BOTTOM };
+enum ClipEdge { CLIP_LEFT, CLIP_RIGHT, CLIP_TOP, CLIP_BOTTOM };
 
 /* Signed distance of a vertex to a clip edge, positive inside. */
-static int16_t clip_distance(const PolyVertex *v, int edge)
+static int16_t clip_distance(const PolyVertex &v, ClipEdge edge)
 {
     switch (edge) {
-    case CLIP_LEFT:   return (int16_t)(v->sx - G->clip_left);
-    case CLIP_RIGHT:  return (int16_t)(G->clip_right - v->sx);
-    case CLIP_TOP:    return (int16_t)(v->sy - G->clip_top);
-    default:          return (int16_t)(G->clip_bottom - v->sy);
+    case CLIP_LEFT:   return (int16_t)(v.sx - G->clip_left);
+    case CLIP_RIGHT:  return (int16_t)(G->clip_right - v.sx);
+    case CLIP_TOP:    return (int16_t)(v.sy - G->clip_top);
+    default:          return (int16_t)(G->clip_bottom - v.sy);
     }
 }
 
 /* How many attributes the polygon carries: 0 flat, 1 shade, 2 texture. */
-static void copy_vertex(PolyVertex *dst, const PolyVertex *src, int attrs)
+static void copy_vertex(PolyVertex &dst, const PolyVertex &src, int attrs)
 {
-    dst->sx = src->sx;
-    dst->sy = src->sy;
-    if (attrs >= 1) dst->a = src->a;
-    if (attrs >= 2) dst->b = src->b;
+    dst.sx = src.sx;
+    dst.sy = src.sy;
+    if (attrs >= 1) dst.a = src.a;
+    if (attrs >= 2) dst.b = src.b;
 }
 
 /* Point where the edge p -> c crosses the clip edge. */
-static void clip_intersect(PolyVertex *out, const PolyVertex *p, const PolyVertex *c,
-                           int edge, int attrs)
+static void clip_intersect(PolyVertex &out, const PolyVertex &p, const PolyVertex &c,
+                           ClipEdge edge, int attrs)
 {
-    int horizontal = edge == CLIP_LEFT || edge == CLIP_RIGHT;
+    bool horizontal = edge == CLIP_LEFT || edge == CLIP_RIGHT;
     int16_t bound = edge == CLIP_LEFT ? G->clip_left : edge == CLIP_RIGHT ? G->clip_right
                   : edge == CLIP_TOP ? G->clip_top : G->clip_bottom;
     /* distances measured along the clipped axis, as the original does */
-    int16_t dc = (int16_t)((horizontal ? c->sx : c->sy) - bound);
-    int16_t dp = (int16_t)((horizontal ? p->sx : p->sy) - bound);
+    int16_t dc = (int16_t)((horizontal ? c.sx : c.sy) - bound);
+    int16_t dp = (int16_t)((horizontal ? p.sx : p.sy) - bound);
 
     if (horizontal) {
-        out->sx = bound;
-        out->sy = edge_lerp(dc, c->sy, dp, p->sy);
+        out.sx = bound;
+        out.sy = edge_lerp(dc, c.sy, dp, p.sy);
     } else {
-        out->sx = edge_lerp(dc, c->sx, dp, p->sx);
-        out->sy = bound;
+        out.sx = edge_lerp(dc, c.sx, dp, p.sx);
+        out.sy = bound;
     }
     if (attrs == 1) {
-        out->a = (uint16_t)edge_lerp(dc, (int16_t)c->a, dp, (int16_t)p->a);
+        out.a = (uint16_t)edge_lerp(dc, (int16_t)c.a, dp, (int16_t)p.a);
     } else if (attrs == 2) {
         /* texture coordinates are unsigned: interpolated at half precision */
-        out->a = (uint16_t)(edge_lerp(dc, (int16_t)(c->a >> 1), dp, (int16_t)(p->a >> 1)) << 1);
-        out->b = (uint16_t)(edge_lerp(dc, (int16_t)(c->b >> 1), dp, (int16_t)(p->b >> 1)) << 1);
+        out.a = (uint16_t)(edge_lerp(dc, (int16_t)(c.a >> 1), dp, (int16_t)(p.a >> 1)) << 1);
+        out.b = (uint16_t)(edge_lerp(dc, (int16_t)(c.b >> 1), dp, (int16_t)(p.b >> 1)) << 1);
     }
 }
 
@@ -96,44 +97,44 @@ static void clip_intersect(PolyVertex *out, const PolyVertex *p, const PolyVerte
  * top side from a vertex lying exactly on it, no extra vertex is added.
  * orig 1000:2df2/2eaf/2f6c/302d (flat), 324f/3376/34a2/35cf (shade),
  * 390a/3aa3/3c3c/3ddb (texture) */
-static void clip_pass(PolyBuf *src, PolyBuf *dst, int edge, int attrs)
+static void clip_pass(PolyBuf &src, PolyBuf &dst, ClipEdge edge, int attrs)
 {
-    PolyVertex *in = src->v;            /* may run past v[9], like the original */
-    PolyVertex *out = dst->v;
-    uint16_t n = src->count, count = 0;
+    PolyVertex *in = src.v;             /* may run past v[9], like the original */
+    PolyVertex *out = dst.v;
+    uint16_t n = src.count, count = 0;
 
     if (n) {
-        copy_vertex(&in[n], &in[0], attrs);
-        int prev_in = clip_distance(&in[0], edge) >= 0;
+        copy_vertex(in[n], in[0], attrs);
+        bool prev_in = clip_distance(in[0], edge) >= 0;
         if (prev_in)
-            copy_vertex(&out[count++], &in[0], attrs);
+            copy_vertex(out[count++], in[0], attrs);
         for (uint16_t i = 1; i <= n; i++) {
-            const PolyVertex *p = &in[i - 1], *c = &in[i];
-            int cur_in = clip_distance(c, edge) >= 0;
+            const PolyVertex &p = in[i - 1], &c = in[i];
+            bool cur_in = clip_distance(c, edge) >= 0;
             if (prev_in && !cur_in) {
-                int on_edge = (edge == CLIP_LEFT || edge == CLIP_TOP) && clip_distance(p, edge) == 0;
+                bool on_edge = (edge == CLIP_LEFT || edge == CLIP_TOP) && clip_distance(p, edge) == 0;
                 if (!on_edge)
-                    clip_intersect(&out[count++], p, c, edge, attrs);
+                    clip_intersect(out[count++], p, c, edge, attrs);
             } else if (!prev_in && cur_in) {
-                clip_intersect(&out[count++], p, c, edge, attrs);
+                clip_intersect(out[count++], p, c, edge, attrs);
             }
             if (cur_in && i < n)
-                copy_vertex(&out[count++], c, attrs);
+                copy_vertex(out[count++], c, attrs);
             prev_in = cur_in;
         }
     }
-    dst->count = count;
+    dst.count = count;
 }
 
 /* Clip poly_buf[0] in place; returns the number of vertices left. */
 static uint16_t clip_polygon(int attrs)
 {
-    PolyBuf *a = &G->poly_buf[0], *b = &G->poly_buf[1];
+    PolyBuf &a = G->poly_buf[0], &b = G->poly_buf[1];
     clip_pass(a, b, CLIP_LEFT, attrs);
     clip_pass(b, a, CLIP_RIGHT, attrs);
     clip_pass(a, b, CLIP_TOP, attrs);
     clip_pass(b, a, CLIP_BOTTOM, attrs);
-    return a->count;
+    return a.count;
 }
 
 /* ------------------------------------------------------------------------
@@ -147,9 +148,8 @@ static void scan_edge_x(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
 {
     int side = 0;
     if (y0 > y1) {
-        int16_t t;
-        t = x0; x0 = x1; x1 = t;
-        t = y0; y0 = y1; y1 = t;
+        std::swap(x0, x1);
+        std::swap(y0, y1);
         side = 1;
     }
     if (y0 < G->span_top) G->span_top = y0;
@@ -174,9 +174,8 @@ static void scan_edge_attr(int16_t *table, int16_t a0, int16_t y0, int16_t a1, i
 {
     int side = 0;
     if (y0 > y1) {
-        int16_t t;
-        t = a0; a0 = a1; a1 = t;
-        t = y0; y0 = y1; y1 = t;
+        std::swap(a0, a1);
+        std::swap(y0, y1);
         side = 1;
     }
     int16_t dy = (int16_t)(y1 - y0);
@@ -197,10 +196,9 @@ static void scan_edge_uv(int16_t y0, int16_t y1, uint16_t u0, uint16_t v0, uint1
 {
     int side = 0;
     if (y0 > y1) {
-        int16_t t = y0; y0 = y1; y1 = t;
-        uint16_t w;
-        w = u0; u0 = u1; u1 = w;
-        w = v0; v0 = v1; v1 = w;
+        std::swap(y0, y1);
+        std::swap(u0, u1);
+        std::swap(v0, v1);
         side = 1;
     }
     int16_t dy = (int16_t)(y1 - y0);
@@ -223,18 +221,18 @@ static void scan_edge_uv(int16_t y0, int16_t y1, uint16_t u0, uint16_t v0, uint1
 
 /* Walk the polygon outline into span_x.  Returns 0 when nothing is left
  * after clipping. */
-static int scan_outline(int attrs)
+static bool scan_outline(int attrs)
 {
     uint16_t n = clip_polygon(attrs);
     if (n < 3)
-        return 0;
+        return false;
     const PolyVertex *v = G->poly_buf[0].v;
     G->span_top = G->clip_bottom;
     G->span_bottom = G->clip_top;
     for (uint16_t i = 0; i + 1 < n; i++)
         scan_edge_x(v[i].sx, v[i].sy, v[i + 1].sx, v[i + 1].sy);
     scan_edge_x(v[n - 1].sx, v[n - 1].sy, v[0].sx, v[0].sy);
-    return 1;
+    return true;
 }
 
 /* Left end and width of a scanline; the tables may hold the ends in either
@@ -260,7 +258,7 @@ static uint16_t span_extent(int16_t y, int16_t *x0, int16_t *w)
  * its high byte - 0xf0 picks a row of the shade table.  Otherwise the two
  * bytes of the word are written alternately (a dither pattern when they
  * differ).  orig 1000:2bec / 1000:2d61 */
-void draw_flat(void)
+void draw_flat()
 {
     if (!scan_outline(0))
         return;
@@ -284,7 +282,7 @@ void draw_flat(void)
 }
 
 /* Gouraud-shaded polygon, attribute a = colour in 8.8.  orig 1000:30ee / 1000:31d1 */
-void draw_shaded(void)
+void draw_shaded()
 {
     if (!scan_outline(1))
         return;
@@ -320,7 +318,7 @@ void draw_shaded(void)
 /* Texture-mapped polygon (affine), attributes u, v in 8.8 texels of a
  * 256-wide texture.  Texel 0xff is transparent, 0xf0..0xfe darken what is
  * behind through the shade table.  orig 1000:36fe / 1000:3827 */
-void draw_textured(void)
+void draw_textured()
 {
     if (!scan_outline(2))
         return;
@@ -359,7 +357,7 @@ void draw_textured(void)
 
 /* Is poly_buf[0] (its first three vertices) facing away, i.e. clockwise
  * on screen?  orig 1000:2662 */
-int poly_backfacing(void)
+bool poly_backfacing()
 {
     const PolyVertex *v = G->poly_buf[0].v;
     int32_t a = (int32_t)(int16_t)(v[0].sx - v[1].sx) * (int16_t)(v[2].sy - v[1].sy);
@@ -379,75 +377,67 @@ static struct {
 
 /* Projection of a point lying on the near plane.  The original uses the
  * full-screen centre here even in split screen. */
-static void near_point(PolyVertex *out, int16_t x, int16_t z, uint32_t attr)
+static void near_point(int16_t x, int16_t z, uint32_t attr)
 {
+    PolyVertex &o = G->poly_buf[0].v[nc.count++];
     int16_t sx, sy;
     project(x, G->near_clip, z, &sx, &sy);
-    out->sx = (int16_t)(sx + 160);
-    out->sy = (int16_t)(100 - sy);
-    out->a = (uint16_t)attr;
-    out->b = (uint16_t)(attr >> 16);
+    o.sx = (int16_t)(sx + 160);
+    o.sy = (int16_t)(100 - sy);
+    o.a = (uint16_t)attr;
+    o.b = (uint16_t)(attr >> 16);
 }
 
-static void emit_projected(const ProjVertex *p, uint32_t attr)
+static void emit_projected(const ProjVertex &p, uint32_t attr)
 {
-    PolyVertex *o = &G->poly_buf[0].v[nc.count++];
-    o->sx = p->sx;
-    o->sy = p->sy;
-    o->a = (uint16_t)attr;
-    o->b = (uint16_t)(attr >> 16);
+    PolyVertex &o = G->poly_buf[0].v[nc.count++];
+    o.sx = p.sx;
+    o.sy = p.sy;
+    o.a = (uint16_t)attr;
+    o.b = (uint16_t)(attr >> 16);
 }
 
 /* First point of a polygon.  attr is (b << 16 | a).  orig 1000:46a0 */
-void poly_begin(const ProjVertex *p, uint32_t attr)
+void poly_begin(const ProjVertex &p, uint32_t attr)
 {
     nc.count = 0;
-    nc.dist = (int16_t)(p->y - G->near_clip);
+    nc.dist = (int16_t)(p.y - G->near_clip);
     if (nc.dist >= 0)
         emit_projected(p, attr);
-    nc.x = p->x;
-    nc.z = p->z;
+    nc.x = p.x;
+    nc.z = p.z;
 }
 
 /* Next point.  Where the outline crosses the near plane a point on the
  * plane is inserted; it takes the attribute of the current point.
  * orig 1000:46d3 */
-void poly_add(const ProjVertex *p, uint32_t attr)
+void poly_add(const ProjVertex &p, uint32_t attr)
 {
-    int16_t d = (int16_t)(p->y - G->near_clip);
+    int16_t d = (int16_t)(p.y - G->near_clip);
     if (nc.dist >= 0) {
-        if (d >= 0) {
+        if (d >= 0)
             emit_projected(p, attr);
-        } else if (nc.dist != 0) {
-            near_point(&G->poly_buf[0].v[nc.count++],
-                       edge_lerp(d, p->x, nc.dist, nc.x),
-                       edge_lerp(d, p->z, nc.dist, nc.z), attr);
-        }
+        else if (nc.dist != 0)
+            near_point(edge_lerp(d, p.x, nc.dist, nc.x), edge_lerp(d, p.z, nc.dist, nc.z), attr);
     } else if (d >= 0) {
-        near_point(&G->poly_buf[0].v[nc.count++],
-                   edge_lerp(nc.dist, nc.x, d, p->x),
-                   edge_lerp(nc.dist, nc.z, d, p->z), attr);
+        near_point(edge_lerp(nc.dist, nc.x, d, p.x), edge_lerp(nc.dist, nc.z, d, p.z), attr);
         emit_projected(p, attr);
     }
     nc.dist = d;
-    nc.x = p->x;
-    nc.z = p->z;
+    nc.x = p.x;
+    nc.z = p.z;
 }
 
 /* Closing point (normally the first one again): only the crossing is
  * added.  Sets the vertex count; returns it.  orig 1000:47ec */
-uint16_t poly_end(const ProjVertex *p, uint32_t attr)
+uint16_t poly_end(const ProjVertex &p, uint32_t attr)
 {
-    int16_t d = (int16_t)(p->y - G->near_clip);
+    int16_t d = (int16_t)(p.y - G->near_clip);
     if (nc.dist >= 0) {
         if (d < 0 && nc.dist != 0)
-            near_point(&G->poly_buf[0].v[nc.count++],
-                       edge_lerp(d, p->x, nc.dist, nc.x),
-                       edge_lerp(d, p->z, nc.dist, nc.z), attr);
+            near_point(edge_lerp(d, p.x, nc.dist, nc.x), edge_lerp(d, p.z, nc.dist, nc.z), attr);
     } else if (d >= 0) {
-        near_point(&G->poly_buf[0].v[nc.count++],
-                   edge_lerp(nc.dist, nc.x, d, p->x),
-                   edge_lerp(nc.dist, nc.z, d, p->z), attr);
+        near_point(edge_lerp(nc.dist, nc.x, d, p.x), edge_lerp(nc.dist, nc.z, d, p.z), attr);
     }
     G->poly_buf[0].count = nc.count;
     return nc.count;

@@ -1,7 +1,7 @@
 /*
  * One rendered frame and the keyboard.
  */
-#include "terep.h"
+#include "terep.hpp"
 
 DataSeg *G;
 uint8_t keys[128];                  /* all released (0xff) once game_init ran */
@@ -35,14 +35,14 @@ static void draw_view(int view)
     engine_sound(G->player_car[view], (uint8_t)view);
 }
 
-static int held(uint8_t scancode)
+static bool held(uint8_t scancode)
 {
     return !(keys[scancode] & 0x80);
 }
 
 /* Render the view(s) and the text, then handle the keys.  Returns 1 when
  * Esc was pressed.  orig FUN_main_render */
-int game_frame(void)
+int game_frame()
 {
     if (!G->split_screen) {
         set_viewport(0, 0x50, 0xc7);

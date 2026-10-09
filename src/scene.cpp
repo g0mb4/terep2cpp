@@ -11,14 +11,15 @@
  * Depending on the view direction the "rows" are map rows (y) or map
  * columns (x), walked upwards or downwards: four traversal orders.
  */
-#include "terep.h"
+#include <utility>
+#include "terep.hpp"
 
-int poly_hidden;
+bool poly_hidden;
 
 /* Camera-space transform of a point given relative to the eye, plus its
- * projection when it is in front of the near plane.  Returns 0 when it is
- * not (sx/sy are left untouched then).  orig 1000:13cc, 1000:2418 */
-int view_transform(int16_t x, int16_t y, int16_t z, ProjVertex *out)
+ * projection when it is in front of the near plane.  Returns false when it
+ * is not (sx/sy are left untouched then).  orig 1000:13cc, 1000:2418 */
+bool view_transform(int16_t x, int16_t y, int16_t z, ProjVertex *out)
 {
     int16_t r[3];
     rotate(G->view_matrix, x, y, z, r);
@@ -26,23 +27,19 @@ int view_transform(int16_t x, int16_t y, int16_t z, ProjVertex *out)
     out->y = (int16_t)-r[1];
     out->z = r[2];
     if (out->y < G->near_clip)
-        return 0;
+        return false;
     int16_t sx, sy;
     project(out->x, out->y, out->z, &sx, &sy);
     out->sx = (int16_t)(sx + G->screen_cx);
     out->sy = (int16_t)(G->screen_cy - sy);
-    return 1;
+    return true;
 }
 
-static uint16_t eye_int(int i)
+/* A point given in map units, relative to the eye. */
+static bool view_transform_units(uint16_t x, uint16_t y, uint16_t z, ProjVertex *out)
 {
-    return map_int((&G->eye.x)[i]);
-}
-
-/* Map cell (x or y) of a 16.16 position. */
-static uint8_t cell_of(uint32_t v)
-{
-    return (uint8_t)(v >> 24);
+    return view_transform((int16_t)(x - G->eye.x.units()), (int16_t)(y - G->eye.y.units()),
+                          (int16_t)(z - G->eye.z.units()), out);
 }
 
 /* ------------------------------------------------------------------------
@@ -51,53 +48,50 @@ static uint8_t cell_of(uint32_t v)
 
 /* One clipping pass of the visible hexagon against a side of the map
  * rectangle.  orig 1000:4394/444d/4506/45c3 */
-static void vis_clip_pass(PointBuf *src, PointBuf *dst, int axis, int16_t bound, int keep_greater)
+static void vis_clip_pass(PointBuf &src, PointBuf &dst, bool axis_y, int16_t bound, bool keep_greater)
 {
-    Point2 *in = src->v, *out = dst->v;
-    uint16_t n = src->count, count = 0;
+    Point2 *in = src.v, *out = dst.v;
+    uint16_t n = src.count, count = 0;
+    auto coord = [&](const Point2 &p) { return axis_y ? p.y : p.x; };
+    auto inside = [&](const Point2 &p) { return keep_greater ? coord(p) >= bound : coord(p) <= bound; };
 
-#define COORD(p) (axis ? (p)->y : (p)->x)
-#define INSIDE(p) (keep_greater ? COORD(p) >= bound : COORD(p) <= bound)
     if (n) {
         in[n] = in[0];
-        int prev_in = INSIDE(&in[0]);
+        bool prev_in = inside(in[0]);
         if (prev_in)
             out[count++] = in[0];
         for (uint16_t i = 1; i <= n; i++) {
-            const Point2 *p = &in[i - 1], *c = &in[i];
-            int cur_in = INSIDE(c);
+            const Point2 &p = in[i - 1], &c = in[i];
+            bool cur_in = inside(c);
             if (prev_in != cur_in) {
-                int16_t dc = (int16_t)(COORD(c) - bound), dp = (int16_t)(COORD(p) - bound);
-                Point2 *o = &out[count++];
-                if (axis) {
-                    o->x = edge_lerp(dc, c->x, dp, p->x);
-                    o->y = bound;
+                int16_t dc = (int16_t)(coord(c) - bound), dp = (int16_t)(coord(p) - bound);
+                Point2 &o = out[count++];
+                if (axis_y) {
+                    o.x = edge_lerp(dc, c.x, dp, p.x);
+                    o.y = bound;
                 } else {
-                    o->x = bound;
-                    o->y = edge_lerp(dc, c->y, dp, p->y);
+                    o.x = bound;
+                    o.y = edge_lerp(dc, c.y, dp, p.y);
                 }
             }
             if (cur_in && i < n)
-                out[count++] = *c;
+                out[count++] = c;
             prev_in = cur_in;
         }
     }
-    dst->count = count;
-#undef COORD
-#undef INSIDE
+    dst.count = count;
 }
 
 /* Record one edge of the visible polygon in vis_span: left ends for edges
  * going one way, right ends for the other (which way depends on whether
  * the polygon is mirrored).  Bresenham-style stepping.
  * orig 1000:4120 / 1000:4302 */
-static void vis_span_edge(int16_t x0, int16_t y0, int16_t x1, int16_t y1, int mirrored)
+static void vis_span_edge(int16_t x0, int16_t y0, int16_t x1, int16_t y1, bool mirrored)
 {
-    int right = mirrored;
+    bool right = mirrored;
     if (y0 > y1) {
-        int16_t t;
-        t = x0; x0 = x1; x1 = t;
-        t = y0; y0 = y1; y1 = t;
+        std::swap(x0, x1);
+        std::swap(y0, y1);
         right = !right;
     }
     if (y0 < G->vis_row_first) G->vis_row_first = y0;
@@ -129,10 +123,10 @@ static void vis_span_edge(int16_t x0, int16_t y0, int16_t x1, int16_t y1, int mi
  * opening in the view direction, clipped to the map and turned into a
  * first/last column for every row.  With swap_xy everything is done with
  * x and y exchanged.  orig 1000:3fd0 / 1000:41b2 */
-static void compute_visible_area(int swap_xy)
+static void compute_visible_area(bool swap_xy)
 {
-    int16_t ex = (int16_t)(eye_int(0) >> 8);
-    int16_t ey = (int16_t)(eye_int(1) >> 8);
+    int16_t ex = G->eye.x.cell();
+    int16_t ey = G->eye.y.cell();
     int16_t s7 = G->yaw_sin7, c7 = G->yaw_cos7;
     int16_t c = (int16_t)(c7 >> 6), s = (int16_t)(s7 >> 6);
     Point2 *p = G->vis_buf[0].v;
@@ -152,17 +146,14 @@ static void compute_visible_area(int swap_xy)
     p[5].y = (int16_t)(((int16_t)(-sb - ca) >> 8) + ey);
     G->vis_buf[0].count = 6;
     if (swap_xy) {
-        for (int i = 0; i < 6; i++) {
-            int16_t t = p[i].x;
-            p[i].x = p[i].y;
-            p[i].y = t;
-        }
+        for (int i = 0; i < 6; i++)
+            p[i] = { p[i].y, p[i].x };
     }
 
-    vis_clip_pass(&G->vis_buf[0], &G->vis_buf[1], 0, G->vis_min, 1);
-    vis_clip_pass(&G->vis_buf[1], &G->vis_buf[0], 0, G->vis_max, 0);
-    vis_clip_pass(&G->vis_buf[0], &G->vis_buf[1], 1, G->vis_lo, 1);
-    vis_clip_pass(&G->vis_buf[1], &G->vis_buf[0], 1, G->vis_hi, 0);
+    vis_clip_pass(G->vis_buf[0], G->vis_buf[1], false, G->vis_min, true);
+    vis_clip_pass(G->vis_buf[1], G->vis_buf[0], false, G->vis_max, false);
+    vis_clip_pass(G->vis_buf[0], G->vis_buf[1], true, G->vis_lo, true);
+    vis_clip_pass(G->vis_buf[1], G->vis_buf[0], true, G->vis_hi, false);
 
     uint16_t n = G->vis_buf[0].count;
     if (n < 3)
@@ -180,14 +171,14 @@ static void compute_visible_area(int swap_xy)
 
 /* Corners of a cell as seen by draw_cell: d0 is the cell's own grid point,
  * d1 its neighbour along the traversal's columns, s0 along its rows. */
-typedef struct CellQuad {
-    const ProjVertex *d0, *d1, *s0, *s1;
-    int swap_xy;
-} CellQuad;
+struct CellQuad {
+    const ProjVertex &d0, &d1, &s0, &s1;
+    bool swap_xy;
+};
 
 /* Texture coordinates of a corner: the cell colour picks a 16x16 tile of
  * maptex.pcx (low nibble: column, high nibble: row). */
-static uint32_t tile_uv(uint8_t color, int dx, int dy)
+static uint32_t tile_uv(uint8_t color, bool dx, bool dy)
 {
     uint16_t u = (uint16_t)(((color & 0x0f) << 12) | 0x80);
     uint16_t v = (uint16_t)(((color & 0xf0) << 8) | 0x80);
@@ -200,33 +191,33 @@ static uint32_t tile_uv(uint8_t color, int dx, int dy)
  * so with the traversal used the visible triangles are the "back-facing"
  * ones; with swap_xy the quad is mirrored and the test flips.  Triangles
  * cut down to less than three points are not tested. */
-static int cell_visible(const CellQuad *q, uint16_t count)
+static bool cell_visible(const CellQuad &q, uint16_t count)
 {
     if (count < 3)
-        return 0;
+        return false;
     poly_hidden = poly_backfacing();
-    return q->swap_xy ? !poly_hidden : poly_hidden;
+    return q.swap_xy ? !poly_hidden : poly_hidden;
 }
 
 /* One map cell as two triangles: textured with maptex when near, a flat
  * fogged colour (second triangle one shade darker) when far.
  * orig 1000:1cde / 1000:1e3a */
-static void draw_cell(const CellQuad *q, uint8_t color)
+static void draw_cell(const CellQuad &q, uint8_t color)
 {
-    int16_t dist = (int16_t)((int16_t)(q->d1->y + q->s0->y) >> 2);
+    int16_t dist = (int16_t)((int16_t)(q.d1.y + q.s0.y) >> 2);
 
     if (dist >= G->fog_start) {
-        uint8_t c = ((const uint8_t *)G->fog_table)[(uint8_t)(dist >> 8) * 256 + color];
+        uint8_t c = (&G->fog_table[0][0])[(uint8_t)(dist >> 8) * 256 + color];   /* may run past the table */
         G->poly_color = (uint16_t)(c << 8 | c);
-        poly_begin(q->d1, 0);
-        poly_add(q->d0, 0);
-        poly_add(q->s0, 0);
-        if (cell_visible(q, poly_end(q->d1, 0)))
+        poly_begin(q.d1, 0);
+        poly_add(q.d0, 0);
+        poly_add(q.s0, 0);
+        if (cell_visible(q, poly_end(q.d1, 0)))
             draw_flat();
-        poly_begin(q->d1, 0);
-        poly_add(q->s0, 0);
-        poly_add(q->s1, 0);
-        if (cell_visible(q, poly_end(q->d1, 0))) {
+        poly_begin(q.d1, 0);
+        poly_add(q.s0, 0);
+        poly_add(q.s1, 0);
+        if (cell_visible(q, poly_end(q.d1, 0))) {
             if (G->poly_color & 0x0f)
                 G->poly_color -= 0x101;
             draw_flat();
@@ -235,29 +226,29 @@ static void draw_cell(const CellQuad *q, uint8_t color)
     }
 
     /* corner offsets in map x/y: mirrored when traversing by columns */
-    int sw = q->swap_xy;
-    uint32_t uv_d0 = tile_uv(color, 0, 0);
-    uint32_t uv_d1 = sw ? tile_uv(color, 0, 1) : tile_uv(color, 1, 0);
-    uint32_t uv_s0 = sw ? tile_uv(color, 1, 0) : tile_uv(color, 0, 1);
-    uint32_t uv_s1 = tile_uv(color, 1, 1);
+    bool sw = q.swap_xy;
+    uint32_t uv_d0 = tile_uv(color, false, false);
+    uint32_t uv_d1 = tile_uv(color, !sw, sw);
+    uint32_t uv_s0 = tile_uv(color, sw, !sw);
+    uint32_t uv_s1 = tile_uv(color, true, true);
 
     raster_texture = seg_ptr(G->seg_maptex);
-    poly_begin(q->d1, uv_d1);
-    poly_add(q->d0, uv_d0);
-    poly_add(q->s0, uv_s0);
-    if (cell_visible(q, poly_end(q->d1, uv_d1)))
+    poly_begin(q.d1, uv_d1);
+    poly_add(q.d0, uv_d0);
+    poly_add(q.s0, uv_s0);
+    if (cell_visible(q, poly_end(q.d1, uv_d1)))
         draw_textured();
-    poly_begin(q->d1, uv_d1);
-    poly_add(q->s0, uv_s0);
-    poly_add(q->s1, uv_s1);
-    if (cell_visible(q, poly_end(q->d1, uv_d1)))
+    poly_begin(q.d1, uv_d1);
+    poly_add(q.s0, uv_s0);
+    poly_add(q.s1, uv_s1);
+    if (cell_visible(q, poly_end(q.d1, uv_d1)))
         draw_textured();
 }
 
 static void draw_cars_in_cell(uint16_t cell)
 {
     for (int i = 0; i < G->num_cars; i++)
-        if (car_get(i)->cell == cell)
+        if (car_get(i).cell == cell)
             draw_car(car_get(i));
 }
 
@@ -273,16 +264,16 @@ static int8_t abs8(int8_t v)
 /* A car spans several cells; it is drawn after the one of its vertices
  * that the traversal reaches last (per axis, the one closest to the
  * camera's row/column).  orig 1000:22f0/233b/2384/23cf */
-static void pick_car_cell(Car *car, int swap_xy, int descending)
+static void pick_car_cell(Car &car, bool swap_xy, bool descending)
 {
-    CarVertex *v = car_vertices(car);
-    uint16_t n = car_vertex_count(car);
-    uint8_t ex = cell_of(G->eye.x), ey = cell_of(G->eye.y);
+    CarVertex *v = car.vertices();
+    uint16_t n = car.vertex_count();
+    uint8_t ex = G->eye.x.cell(), ey = G->eye.y.cell();
     int8_t best_x = 0x7f, best_y = 0x7f;
     uint8_t cell_x = 0, cell_y = 0;
 
     for (uint16_t i = 0; i < n; i++) {
-        uint8_t cx = cell_of(v[i].pos.x), cy = cell_of(v[i].pos.y);
+        uint8_t cx = v[i].pos.x.cell(), cy = v[i].pos.y.cell();
         int8_t dx = (int8_t)(cx - ex), dy = (int8_t)(cy - ey);
         if (!swap_xy) {
             dx = abs8(dx);
@@ -294,7 +285,7 @@ static void pick_car_cell(Car *car, int swap_xy, int descending)
         if (dx < best_x) { cell_x = cx; best_x = dx; }
         if (dy < best_y) { cell_y = cy; best_y = dy; }
     }
-    car->cell = (uint16_t)(cell_y << 8 | cell_x);
+    car.cell = (uint16_t)(cell_y << 8 | cell_x);
 }
 
 /* ------------------------------------------------------------------------
@@ -303,39 +294,32 @@ static void pick_car_cell(Car *car, int swap_xy, int descending)
 
 /* Project grid point (row, col) of the current traversal into the row
  * buffer. */
-static void project_grid_point(uint8_t row, uint8_t col, int swap_xy, ProjVertex *out)
+static void project_grid_point(uint8_t row, uint8_t col, bool swap_xy, ProjVertex *out)
 {
     uint16_t cell = swap_xy ? (uint16_t)(col << 8 | row) : (uint16_t)(row << 8 | col);
-    int16_t x = (int16_t)((cell & 0xff) << 8);
-    int16_t y = (int16_t)(cell & 0xff00);
-    int16_t z = (int16_t)(heightmap()[cell] << 4);
-    view_transform((int16_t)(x - eye_int(0)), (int16_t)(y - eye_int(1)),
-                   (int16_t)(z - eye_int(2)), out);
+    view_transform_units((uint16_t)((cell & 0xff) << 8), (uint16_t)(cell & 0xff00),
+                         (uint16_t)(heightmap()[cell] << 4), out);
 }
 
 /* Draw cell (row_c, col_c): its corners are in the row buffers lo (row_c)
  * and hi (row_c + 1). */
-static void draw_grid_cell(uint8_t row_c, uint8_t col_c, ProjVertex *lo, ProjVertex *hi, int swap_xy)
+static void draw_grid_cell(uint8_t row_c, uint8_t col_c, ProjVertex *lo, ProjVertex *hi, bool swap_xy)
 {
     uint16_t cell = swap_xy ? (uint16_t)(col_c << 8 | row_c) : (uint16_t)(row_c << 8 | col_c);
-    CellQuad q = { &lo[col_c], &lo[col_c + 1], &hi[col_c], &hi[col_c + 1], swap_xy };
-    draw_cell(&q, colormap()[cell]);
+    CellQuad q = { lo[col_c], lo[col_c + 1], hi[col_c], hi[col_c + 1], swap_xy };
+    draw_cell(q, colormap()[cell]);
     draw_cars_in_cell(cell);
 }
 
 /* orig 1000:1965 (and its second half, FUN_1965_NP) */
-void draw_terrain(void)
+void draw_terrain()
 {
     uint16_t yaw = (uint16_t)G->eye_angles[2];
     uint8_t octant = (uint8_t)(yaw >> 8);
-    int swap_xy, descending;
 
     /* view mostly along x: traverse by columns */
-    swap_xy = !parity_even(octant & 0x60);
-    if (!swap_xy)
-        descending = !parity_even(octant & 0xa0);
-    else
-        descending = !(octant & 0x80);
+    bool swap_xy = !parity_even(octant & 0x60);
+    bool descending = !swap_xy ? !parity_even(octant & 0xa0) : !(octant & 0x80);
 
     G->terrain_row_cur = 0;
     G->terrain_row_prev = 0xa00;
@@ -344,7 +328,7 @@ void draw_terrain(void)
     for (int i = 0; i < G->num_cars; i++)
         pick_car_cell(car_get(i), swap_xy, descending);
 
-    uint8_t eye_col = swap_xy ? cell_of(G->eye.y) : cell_of(G->eye.x);
+    uint8_t eye_col = swap_xy ? G->eye.y.cell() : G->eye.x.cell();
     uint8_t first = (uint8_t)G->vis_row_first, last = (uint8_t)G->vis_row_last;
     uint8_t end_row = descending ? last : first;     /* no cells to draw on it */
     int16_t row_index = descending ? G->vis_row_last : G->vis_row_first;
@@ -403,8 +387,8 @@ void draw_terrain(void)
 void draw_sprite(int16_t sx, int16_t sy, int16_t depth, uint16_t sprite_ofs)
 {
     const uint8_t *sp = ds_ptr(sprite_ofs);
-    int16_t h = (int16_t)(*(const int16_t *)sp / depth);
-    const uint32_t *uv = (const uint32_t *)(sp + 2);
+    int16_t h = (int16_t)(*reinterpret_cast<const int16_t *>(sp) / depth);
+    const uint32_t *uv = reinterpret_cast<const uint32_t *>(sp + 2);
     PolyVertex *o = G->poly_buf[0].v;
     static const int8_t corner[4][2] = { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } };
     for (int i = 0; i < 4; i++) {
@@ -419,12 +403,12 @@ void draw_sprite(int16_t sx, int16_t sy, int16_t depth, uint16_t sprite_ofs)
 
 /* Smoke and debris: textured squares, only where the terrain is visible.
  * orig 1000:0b25 */
-void draw_particles(void)
+void draw_particles()
 {
     raster_texture = seg_ptr(G->seg_textures);
-    for (uint16_t i = 0; i < G->particle_bytes; i += sizeof(Particle)) {
-        Particle *p = (Particle *)((uint8_t *)G->particles + i);
-        uint8_t a = cell_of(p->pos.x), b = cell_of(p->pos.y);
+    for (uint16_t i = 0; i < G->particle_bytes / sizeof(Particle); i++) {
+        const Particle &p = G->particles[i];
+        uint8_t a = p.pos.x.cell(), b = p.pos.y.cell();
         int16_t row = G->terrain_swap_xy ? a : b;
         int16_t col = G->terrain_swap_xy ? b : a;
         if (row < G->vis_row_first || row > G->vis_row_last)
@@ -433,10 +417,8 @@ void draw_particles(void)
             continue;
 
         ProjVertex v;
-        if (!view_transform((int16_t)(map_int(p->pos.x) - eye_int(0)),
-                            (int16_t)(map_int(p->pos.y) - eye_int(1)),
-                            (int16_t)(map_int(p->pos.z) - eye_int(2)), &v))
+        if (!view_transform_units(p.pos.x.units(), p.pos.y.units(), p.pos.z.units(), &v))
             continue;
-        draw_sprite(v.sx, v.sy, v.y, G->smoke_sprite[(uint8_t)p->kind >> 4]);
+        draw_sprite(v.sx, v.sy, v.y, G->smoke_sprite[(uint8_t)p.kind >> 4]);
     }
 }

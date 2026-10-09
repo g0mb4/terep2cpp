@@ -5,7 +5,7 @@
  * File names are the ones stored in the data segment; the host opens them
  * (data_fopen, case-insensitive on systems that care).
  */
-#include "terep.h"
+#include "terep.hpp"
 
 /* ------------------------------------------------------------------------
  * PCX (8-bit, single plane, RLE)
@@ -13,7 +13,7 @@
 
 /* Read the 128-byte header.  Like the original, the check only rejects
  * fewer than 8 bits per pixel, or 8 bits with no planes.  orig 1000:5a95 */
-static int pcx_read_header(FILE *f)
+static bool pcx_read_header(FILE *f)
 {
     fread(&G->pcx_header, 1, sizeof G->pcx_header, f);
     G->pcx_width = (uint16_t)(G->pcx_header.xmax - G->pcx_header.xmin + 1);
@@ -61,19 +61,19 @@ static void pcx_decode(FILE *f, uint8_t *dst)
 }
 
 /* orig 1000:5a60 */
-static int pcx_load(const char *name, uint8_t *dst)
+static bool pcx_load(const char *name, uint8_t *dst)
 {
     FILE *f = data_fopen(name);
     if (!f)
-        return 0;
+        return false;
     if (!pcx_read_header(f)) {
         fclose(f);
-        return 0;
+        return false;
     }
     fseek(f, 0x80, SEEK_SET);
     pcx_decode(f, dst);
     fclose(f);
-    return 1;
+    return true;
 }
 
 static void read_table(const char *name, void *dst, size_t size)
@@ -88,7 +88,7 @@ static void read_table(const char *name, void *dst, size_t size)
 /* Height map, terrain textures, colour map with the palette, fog and
  * translucency tables.  Stops at the first missing image (the original
  * goes on with whatever is in memory).  orig 1000:24c0 */
-static void load_map(void)
+static void load_map()
 {
     if (!pcx_load(G->fname_map, heightmap()))
         return;
@@ -127,14 +127,13 @@ static uint16_t load_car(const char *name, uint16_t ofs, uint16_t x, uint16_t y)
     uint16_t size = (uint16_t)fread(ds_ptr(ofs), 1, 10000, f);
     fclose(f);
 
-    Car *car = car_at(ofs);
+    Car &car = car_at(ofs);
     int16_t z = (int16_t)(terrain_height(x, y) + 100);
-    CarVertex *v = car_vertices(car);
-    for (uint16_t i = 0; i < car_vertex_count(car); i++) {
-        v[i].pos.x += (uint32_t)x << 16;
-        v[i].pos.y += (uint32_t)y << 16;
-        v[i].pos.z += (uint32_t)(uint16_t)z << 16;
-    }
+    Vec3 offset = { (int32_t)Coord::from_units(x).raw, (int32_t)Coord::from_units(y).raw,
+                    (int32_t)Coord::from_units((uint16_t)z).raw };
+    CarVertex *v = car.vertices();
+    for (uint16_t i = 0; i < car.vertex_count(); i++)
+        v[i].pos += offset;
     return size;
 }
 
@@ -142,17 +141,17 @@ static uint16_t load_car(const char *name, uint16_t ofs, uint16_t x, uint16_t y)
  * first.  The original takes its loop count from the first vertex's x
  * fraction instead of the vertex count; it only matters when there is no
  * marked vertex.  orig 1000:2431 */
-static void find_ref_vertex(Car *car)
+static void find_ref_vertex(Car &car)
 {
-    uint16_t first = (uint16_t)(car->vertices_ofs + 2);
-    uint16_t base = ds_ofs(car);
+    uint16_t first = (uint16_t)(car.vertices_ofs + 2);
+    uint16_t base = ds_ofs(&car);
     uint16_t at = (uint16_t)(base + first);
-    uint16_t count = *(uint16_t *)ds_ptr(at);
+    uint16_t count = *reinterpret_cast<uint16_t *>(ds_ptr(at));
 
-    car->ref_vertex_ofs = first;
+    car.ref_vertex_ofs = first;
     do {
-        if (*(uint16_t *)ds_ptr((uint16_t)(at + offsetof(CarVertex, wheel))) == 0xffff) {
-            car->ref_vertex_ofs = (uint16_t)(at - base);
+        if (reinterpret_cast<CarVertex *>(ds_ptr(at))->wheel == 0xffff) {
+            car.ref_vertex_ofs = (uint16_t)(at - base);
             return;
         }
         at = (uint16_t)(at + sizeof(CarVertex));
@@ -161,7 +160,7 @@ static void find_ref_vertex(Car *car)
 
 /* The car's skin: a PCX of up to 256 pixels width in its own segment.
  * Without it the car keeps the segment named in its file (0 = textures.pcx). */
-static void load_car_skin(Car *car, const char *name)
+static void load_car_skin(Car &car, const char *name)
 {
     FILE *f = data_fopen(name);
     if (!f)
@@ -171,7 +170,7 @@ static void load_car_skin(Car *car, const char *name)
     uint16_t paragraphs = (uint16_t)(((uint16_t)(w * G->pcx_height) >> 4) + 1);
     uint16_t seg;
     if (seg_alloc(paragraphs, &seg) == 0) {
-        car->texture_seg = seg;
+        car.texture_seg = seg;
         pcx_decode(f, seg_ptr(seg));
     }
     fclose(f);
@@ -180,29 +179,35 @@ static void load_car_skin(Car *car, const char *name)
 /* Cars are loaded back to back from car_pool until a carN.dat is missing,
  * lined up along y = 0x7a00 every 256 units of x.  The name tables hold 5
  * entries; a sixth car would take its name from the bytes after them. */
-static void load_cars(void)
+/* A word of the data segment at a computed offset. */
+static uint16_t &ds_word(size_t ofs)
+{
+    return *reinterpret_cast<uint16_t *>(ds_ptr((uint16_t)ofs));
+}
+
+static void load_cars()
 {
     G->num_cars = 0;
     G->car_ofs[0] = (uint16_t)offsetof(DataSeg, car_pool);
     for (int i = 0;; i++) {
         /* read through ds_ptr: i can run past the 5-entry tables */
-        const char *dat = (const char *)ds_ptr(*(uint16_t *)ds_ptr((uint16_t)(0x5af7 + 2 * i)));
-        const char *pcx = (const char *)ds_ptr(*(uint16_t *)ds_ptr((uint16_t)(0x5b2e + 2 * i)));
-        uint16_t size = load_car(dat, *(uint16_t *)ds_ptr((uint16_t)(0x5bbc + 2 * i)), (uint16_t)(0x8000 - i * 256), 0x7a00);
+        const char *dat = (const char *)ds_ptr(ds_word(offsetof(DataSeg, car_dat_name) + 2 * i));
+        const char *pcx = (const char *)ds_ptr(ds_word(offsetof(DataSeg, car_pcx_name) + 2 * i));
+        uint16_t size = load_car(dat, ds_word(offsetof(DataSeg, car_ofs) + 2 * i), (uint16_t)(0x8000 - i * 256), 0x7a00);
         if (!size)
             break;
-        Car *car = car_get(i);
+        Car &car = car_get(i);
         find_ref_vertex(car);
         load_car_skin(car, pcx);
         G->num_cars++;
-        *(uint16_t *)ds_ptr((uint16_t)(0x5bbc + 2 * (i + 1))) = (uint16_t)(G->car_ofs[i] + size);
+        ds_word(offsetof(DataSeg, car_ofs) + 2 * (i + 1)) = (uint16_t)(G->car_ofs[i] + size);
     }
 }
 
 /* ------------------------------------------------------------------------ */
 
 /* Returns 0 on success.  orig f_init */
-int game_init(void)
+int game_init()
 {
     memset(keys, 0xff, sizeof keys);
     G->num_cars = -2;

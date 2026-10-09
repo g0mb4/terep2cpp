@@ -3,7 +3,7 @@
  * row) ended by a zero byte; font_offset[c] locates glyph c relative to
  * font_offset + 0x100 (offsets in the data segment).
  */
-#include "terep.h"
+#include "terep.hpp"
 
 /* Control bytes: 0 or 13 end the string, 9 is a tab (20 pixels),
  * 27 followed by a byte changes the colour, space is 5 pixels wide.

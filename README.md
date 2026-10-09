@@ -1,6 +1,6 @@
-# terep2 em C
+# terep2 em C++
 
-Reescrita em C legível do **Terep2** (Nagymáthé Dénes, 1996–97, "-DEFORMERS- Atomic Vehicle
+Reescrita em C++ legível (estilo "C com classes") do **Terep2** (Nagymáthé Dénes, 1996–97, "-DEFORMERS- Atomic Vehicle
 Simulation System"), feita a partir do disassembly em `terep2isolado/reasm/maincode.asm` e da
 versão Win16. O comportamento é idêntico ao do original quadro a quadro: o framebuffer e o
 estado do jogo batem byte a byte com o asm original (veja [Verificação](#verificação)).
@@ -15,7 +15,7 @@ make test       # roda os cenários gravados e compara com a referência
 ./terep2 -d data/data.bin outra/pista
 ```
 
-C11 com extensões GNU (`__attribute__((packed))` e `-fwrapv`), então compila com gcc ou clang. Testado em Linux x86-64 com os dois. O código não depende do tamanho de ponteiro, mas não testei em 32 bits. A física roda a 120 Hz e a tela a
+C++17 com extensões GNU (`__attribute__((packed))` e `-fwrapv`), então compila com g++ ou clang++. Testado em Linux x86-64 com os dois. O código não depende do tamanho de ponteiro, mas não testei em 32 bits. A física roda a 120 Hz e a tela a
 60 Hz, como no port Win16. A janela tem escala 3x. Esc sai.
 
 ### Controles
@@ -40,29 +40,53 @@ C11 com extensões GNU (`__attribute__((packed))` e `-fwrapv`), então compila c
 
 ```
 src/            o jogo (não depende de SO nem de biblioteca)
-  terep.h       tipos (Car, CarVertex, CarSpring, Particle, ProjVertex, PcxHeader...) e protótipos
-  fixed.h       ponto fixo: ângulos (0x10000 = 360°), seno/cosseno Q15, posições 16.16
+  terep.hpp     tipos de valor (Vec3, Coord, Pos), estruturas (Car, CarVertex, CarSpring,
+                Particle, ChaseCam, ProjVertex, PcxHeader...) e protótipos
+  fixed.hpp     ponto fixo: ângulos (0x10000 = 360°), seno/cosseno Q15, multiplicações
   dataseg.def   mapa do segmento de dados original, campo a campo (fonte da verdade)
-  dataseg.h     struct DataSeg gerada a partir do .def (tools/gen_dataseg.py)
-  math.c        seno/cosseno por tabela, atan2, comprimento de vetor, matriz de rotação
-  terrain.c     altura do terreno (2 triângulos por célula do heightmap)
-  physics.c     corpo mole: controles, rodas, molas, integração, colisão entre carros, partículas
-  camera.c      as 5 câmeras
-  raster.c      recorte de polígonos, plano próximo, preenchimento flat/Gouraud/texturizado
-  scene.c       área visível, terreno por algoritmo do pintor, sprites e partículas
-  car_draw.c    transformação dos vértices do carro e o interpretador do modelo (bytecode)
-  text.c        fonte bitmap
-  sound.c       registradores do AdLib (o host decide o que fazer com eles)
-  load.c        PCX, mapa, tabelas de neblina/translucidez, carros, game_init
-  game.c        um quadro (telas, texto, teclas) e o teclado
+  dataseg.hpp   struct DataSeg gerada a partir do .def (tools/gen_dataseg.py)
+  math.cpp      seno/cosseno por tabela, atan2, comprimento de vetor, matriz de rotação
+  terrain.cpp   altura do terreno (2 triângulos por célula do heightmap)
+  physics.cpp   corpo mole (métodos de Car): controles, rodas, molas, integração, colisão, partículas
+  camera.cpp    as 5 câmeras
+  raster.cpp    recorte de polígonos, plano próximo, preenchimento flat/Gouraud/texturizado
+  scene.cpp     área visível, terreno por algoritmo do pintor, sprites e partículas
+  car_draw.cpp  transformação dos vértices do carro e o interpretador do modelo (bytecode)
+  text.cpp      fonte bitmap
+  sound.cpp     registradores do AdLib (o host decide o que fazer com eles)
+  load.cpp      PCX, mapa, tabelas de neblina/translucidez, carros, game_init
+  game.cpp      um quadro (telas, texto, teclas) e o teclado
 host/
-  common.c      segmentos de 64 KB, carga do data.bin, passo de tempo, abrir arquivos sem caixa
-  headless.c    host de teste: roda N quadros com teclas roteirizadas e imprime CRCs
-  sdl_main.c    host SDL2
+  host.hpp      o que os hosts compartilham
+  common.cpp    segmentos de 64 KB, carga do data.bin, passo de tempo, abrir arquivos sem caixa
+  headless.cpp  host de teste: roda N quadros com teclas roteirizadas e imprime CRCs
+  sdl_main.cpp  host SDL2
 data/           data.bin (segmento de dados do original) e a pista Asphalt
 tests/          run_tests.sh, máscara do segmento de dados e referências (ref/*.txt = teclas, *.crc)
-tools/          oráculos usados na verificação (abaixo), gerador do dataseg.h, gerador de roteiros
+tools/          oráculos usados na verificação (abaixo), gerador do dataseg.hpp, gerador de roteiros
 ```
+
+### Estilo C++
+
+C++ só onde deixa o código mais claro; o resto continua no estilo clássico (funções livres,
+`printf`, `memcpy`; da biblioteca padrão só `std::swap`; sem exceções, sem herança):
+
+- **Tipos de valor para o ponto fixo.** `Vec3` (16.16 com sinal: velocidades, forças, normais)
+  com `+ - += -= >>`; `Coord` (uma coordenada de posição, 8.24 em células sem sinal, com
+  `cell()`, `units()`, `Coord - Coord` = distância com sinal) e `Pos` (três `Coord`, com
+  `Pos + Vec3` e `Pos - Pos` = `Vec3`). Somar uma posição a outra não compila, o que já pegaria
+  o tipo de confusão que existia entre int32 e uint32.
+- **Métodos no carro.** `Car` é o cabeçalho do `carN.dat` com `vertices()`, `springs()` e a física
+  como métodos (`car.update_springs()`, `car.jump(...)`); `CarSpring::type()/softness()`,
+  `CarVertex::is_wheel()`, `Particle::ICE_CHIP` etc.
+- **Referências, `bool`, `enum`, lambdas** no lugar de ponteiros de saída, flags int, `#define`
+  e macros locais; nada de `goto`.
+- `#pragma once` em todos os cabeçalhos; tudo é trivialmente copiável, sem construtores.
+
+Uma regra que pesa: **todas as estruturas são `packed`** (o layout tem que bater com o segmento
+original) e o C++ não deixa ligar uma referência a um campo de struct packed (`int &x =
+car.speed` não compila). Nesses casos o código usa uma cópia e grava de volta, ou um ponteiro.
+Chamar método em campo packed funciona normalmente.
 
 ### Por que ainda existe um "segmento de dados"
 
@@ -71,7 +95,7 @@ O original guarda tudo num segmento de 64 KB e o próprio formato dos arquivos d
 internos como offsets de 16 bits; o modelo do carro é um programa cujo contador de programa é
 um offset no segmento; a tabela de offsets da fonte dá a volta em 16 bits. Por isso o estado
 global continua numa `struct DataSeg` com o layout original, mas todo campo tem nome e tipo
-(`G->gravity`, `G->chase_cam[1]`, `car->lowest_vertex`...). Os acessos por offset restantes
+(`G->gravity`, `G->chase_cam[1]`, `car.lowest_vertex`...). Os acessos por offset restantes
 (`ds_ptr`) ficam onde o original realmente aritmetiza endereços: bytecode do carro, fonte e as
 tabelas de nomes de arquivo. Variáveis de rascunho do asm viraram variáveis locais. O que fica
 fora do segmento: teclado (`keys`), segmentos de imagem (heightmap, mapa de cores, texturas,
@@ -84,7 +108,7 @@ Dois oráculos, os dois em `tools/`:
 - **asm original** (`tools/asm_oracle`): o próprio `maincode.asm` montado com nasm e executado
   num emulador x86 16 bits (unicorn), com os serviços DOS emulados. É a verdade de referência.
   `sh tools/asm_oracle/build.sh ../terep2isolado saida/` e depois `python3 saida/run.py`.
-- **previous_effort** (`tools/oracle`): a tradução C++ mecânica, com um host Linux. É ~1000x
+- **previous_effort** (`tools/oracle`): a tradução C++ mecânica antiga, com um host Linux. É ~1000x
   mais rápida que o emulador e permite trocar subsistemas pelo código novo
   (`--new physics,render,init`), o que serviu para reescrever uma parte de cada vez.
   `bash tools/build_oracle.sh build/`.
@@ -93,8 +117,10 @@ Todos imprimem, por quadro, o CRC32 do framebuffer e do segmento de dados (com
 `tests/dsmask.h` mascarando só lixo de registradores que o original deixa em variáveis de
 rascunho). Resultados:
 
-- cenário de 600 quadros que passa por todas as teclas (`tools/cenario.py`): C = C++ = asm;
-- 12 roteiros aleatórios de 3000 quadros (`tools/fuzz_script.py`): C = C++ em todos;
+- cenário de 600 quadros que passa por todas as teclas (`tools/cenario.py`): novo =
+  previous_effort = asm;
+- 12 roteiros aleatórios de 3000 quadros (`tools/fuzz_script.py`): novo = previous_effort em
+  todos, com g++ e com clang++;
 - roteiros aleatórios 4 e 7 (3000 quadros cada) contra o asm: segmento de dados idêntico em
   todos os quadros, e tela idêntica fora da linha do título. No roteiro 4 o título se
   corrompe (explicado abaixo) e algumas colunas dele saem diferentes.
@@ -106,7 +132,7 @@ rascunho). Resultados:
 Bugs e esquisitices do original que foram **mantidos** (estão comentados no código):
 
 - **Pulo**: a busca do vértice mais baixo usa AX, que é a metade baixa do impulso, então a
-  parte baixa do impulso acaba sendo a altura do último vértice (`physics.c`, `car_jump`).
+  parte baixa do impulso acaba sendo a altura do último vértice (`physics.cpp`, `Car::jump`).
 - **Título que se corrompe**: segurar 1/2 enquanto troca de carro (Tab/Q) empurra o
   `lowest_vertex` de um carro que nunca pulou, que vale 0. O impulso é somado no offset
   0x14 do segmento, que é o "H" de "VEHICLE" no título, e a letra vira lixo.
@@ -123,10 +149,10 @@ Bugs e esquisitices do original que foram **mantidos** (estão comentados no có
 - O cabeçalho PCX quase não é validado; um sexto carro leria o nome depois do fim da tabela.
 
 Diferença entre o port Win16 e o `previous_effort`: o comprimento da mola (`sqrt`) é
-arredondado (CVTSS2SI) no binário, e o C++ truncava. Por isso o C++ divergia do original
+arredondado (CVTSS2SI) no binário, e o previous_effort truncava. Por isso ele divergia do original
 depois de algumas centenas de quadros; o oráculo em `tools/oracle` já vem corrigido.
 
 ## O que não foi feito
 
-- Não há build Win16/DOS; o alvo é C portável. O som é só a sequência de escritas no OPL2
+- Não há build Win16/DOS; o alvo é C++ portável. O som é só a sequência de escritas no OPL2
   (`opl_write_hook`); o host SDL ainda não toca nada.

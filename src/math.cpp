@@ -1,7 +1,7 @@
 /*
  * Table-driven trigonometry, vector length and the 3x3 view rotation.
  */
-#include "terep.h"
+#include "terep.hpp"
 
 /* orig 1000:2aad */
 int16_t fx_sin(uint16_t angle)
@@ -83,11 +83,10 @@ int32_t vec3_length(int16_t a, int16_t b, int16_t c)
 
 /* Divide a 16.16 vector by its length (+1): the result has 1.0 == 0x10000.
  * orig 1000:2726 */
-Vec3fx vec3_normalize(int32_t x, int32_t y, int32_t z)
+Vec3 vec3_normalize(Vec3 v)
 {
-    int32_t len = vec3_length(fx_int(x), fx_int(y), fx_int(z)) + 1;
-    Vec3fx r = { x / len, y / len, z / len };
-    return r;
+    int32_t len = vec3_length(fx_int(v.x), fx_int(v.y), fx_int(v.z)) + 1;
+    return { v.x / len, v.y / len, v.z / len };
 }
 
 /* Perspective divide, orig 1000:2760.  depth is the camera-space y. */
