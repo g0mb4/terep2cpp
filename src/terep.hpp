@@ -75,9 +75,13 @@ struct Pos {
  * Small structures that live inside the data segment
  * ------------------------------------------------------------------------- */
 
+struct PACKED Angles {              /* an orientation, applied roll, pitch, yaw (see build_matrix) */
+    Angle roll, pitch, yaw;
+};
+
 struct PACKED ChaseCam {            /* state of the "follow" cameras (F3/F4/F5) */
-    Pos     pos;
-    int16_t yaw, pitch, roll;
+    Pos   pos;
+    Angle yaw, pitch, roll;
 };
 
 struct PACKED Particle {            /* smoke puffs, sparks and ice chips */
@@ -182,11 +186,11 @@ struct Car {
     std::vector<uint8_t>   model;   /* the drawing program; pc 0 is its start */
 
     uint16_t drive = REAR;          /* Drive (from the file) */
-    int16_t  steer = 0;             /* current steering, +-0x2000 */
+    Angle    steer = {};            /* current steering angle, +-45 deg */
     int16_t  throttle = 0;          /* +-0x2000 */
     uint16_t handbrake = 0;
     int16_t  mid[3] = {};           /* middle of the body (map units) */
-    int16_t  steer_used = 0;        /* steering/throttle latched for this tick */
+    Angle    steer_used = {};       /* steering/throttle latched for this tick */
     int16_t  throttle_used = 0;
     uint16_t cell = 0;              /* map cell the car is drawn with */
     uint16_t texture_seg = 0;       /* car skin (0 = use textures.pcx) */
@@ -279,16 +283,16 @@ inline int16_t screen_clamp(int32_t v)
  * ------------------------------------------------------------------------- */
 
 /* math.cpp */
-int16_t  fx_sin(uint16_t angle);
-int16_t  fx_cos(uint16_t angle);
-uint16_t fx_atan2(int16_t y, int16_t x);
+Q15      fx_sin(Angle a);
+Q15      fx_cos(Angle a);
+Angle    fx_atan2(int16_t y, int16_t x);
 int32_t  vec2_length(int16_t a, int16_t b);
 int32_t  vec3_length(int16_t a, int16_t b, int16_t c);
 Vec3     vec3_normalize(Vec3 v);
 void     project(int16_t x, int16_t depth, int16_t z, int16_t *sx, int16_t *sy);
-void     rotate(const int16_t m[9], int16_t x, int16_t y, int16_t z, int16_t out[3]);
-void     build_matrix(const int16_t angles[3], int16_t m[9]);
-void     transpose(int16_t m[9]);
+void     rotate(const Q15 m[9], int16_t x, int16_t y, int16_t z, int16_t out[3]);
+void     build_matrix(Angles a, Q15 m[9]);
+void     transpose(Q15 m[9]);
 
 /* terrain.cpp */
 int16_t  terrain_height(uint16_t x, uint16_t y);

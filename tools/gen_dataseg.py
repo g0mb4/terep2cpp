@@ -20,7 +20,7 @@ SIZES = {
     'int16_t': 2, 'uint16_t': 2,
     'int32_t': 4, 'uint32_t': 4,
     'Vec3': 12, 'Pos': 12, 'ChaseCam': 0x12, 'Particle': 0x1c, 'ProjVertex': 10,
-    'PolyVertex': 8, 'ScanEdge': 4, 'Point2': 4,
+    'PolyVertex': 8, 'ScanEdge': 4, 'Point2': 4, 'Angles': 6, 'Q15': 2,
     'PcxHeader': 128, 'SpriteQuad': 0x12, 'PolyBuf': 0x52, 'PointBuf': 0x2a,
 }
 

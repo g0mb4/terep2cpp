@@ -22,7 +22,7 @@ static void transform_point(Pos p, ProjVertex *out)
 static Vec3 steered_axle(Car &car)
 {
     Vec3 ax = car.axis_x(), ay = car.axis_y();
-    int32_t s = q31(fx_sin(car.steer_used)), c = q31(fx_cos(car.steer_used));
+    int32_t s = fx_sin(car.steer_used).q31(), c = fx_cos(car.steer_used).q31();
     auto turn = [&](int32_t y, int32_t x) { return (int32_t)((uint32_t)(mul_hi32(y, s) + mul_hi32(x, c)) << 7); };
     return { turn(ay.x, ax.x), turn(ay.y, ax.y), turn(ay.z, ax.z) };
 }
@@ -142,10 +142,10 @@ static void draw_wheel(uint16_t ops)
     uint16_t sp = (uint16_t)(ops + 6 + view * 20);
     int16_t w0 = (int16_t)rd16(sp), w1 = (int16_t)rd16((uint16_t)(sp + 2));
 
-    uint16_t angle = fx_atan2((int16_t)(b.sx - a.sx), (int16_t)(b.sy - a.sy));
-    int16_t s = fx_sin(angle), c = fx_cos(angle);
+    Angle angle = fx_atan2((int16_t)(b.sx - a.sx), (int16_t)(b.sy - a.sy));
+    Q15 s = fx_sin(angle), c = fx_cos(angle);
     int16_t depth = a.y;
-    auto size = [&](int16_t w, int16_t t) { return screen_clamp(mul_q15(w, t) * render_scale / depth); };
+    auto size = [&](int16_t w, Q15 t) { return screen_clamp(w * t * render_scale / depth); };
     int16_t c0 = size(w0, c), s0 = size(w0, s);
     int16_t c1 = size(w1, c), s1 = size(w1, s);
 

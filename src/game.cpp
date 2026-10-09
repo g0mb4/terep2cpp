@@ -25,9 +25,9 @@ static void set_viewport(int16_t top, int16_t center_y, int16_t bottom)
 static void draw_view(int view)
 {
     camera_update(view);
-    uint16_t yaw = (uint16_t)G->eye_angles[2];
-    G->yaw_sin7 = (int16_t)(fx_sin(yaw) >> 7);
-    G->yaw_cos7 = (int16_t)(fx_cos(yaw) >> 7);
+    Angle yaw = G->eye_angles.yaw;
+    G->yaw_sin7 = (int16_t)(fx_sin(yaw).raw >> 7);
+    G->yaw_cos7 = (int16_t)(fx_cos(yaw).raw >> 7);
     build_matrix(G->eye_angles, G->view_matrix);
     transpose(G->view_matrix);
     if (view == 0)

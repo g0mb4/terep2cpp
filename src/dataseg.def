@@ -14,9 +14,9 @@
 0x0080 ChaseCam chase_cam[2]              ; free-floating camera state, one per player
 0x00a4 uint16_t player_car[2]             ; car index followed by each view (Tab / Q)
 0x00aa Pos      eye                       ; camera position (16.16)
-0x00c2 int16_t  eye_angles[3]             ; roll, pitch, yaw of the camera
+0x00c2 Angles   eye_angles                ; orientation of the camera
 0x00c8 int16_t  cars_center[3]            ; average car position (camera 5)
-0x00ce int16_t  view_matrix[9]            ; Q15 rotation, world -> camera
+0x00ce Q15      view_matrix[9]            ; rotation, world -> camera
 0x00e0 Vec3     cam_axis_x                ; axes of the followed car (cameras 1 and 2)
 0x00ec Vec3     cam_axis_y
 0x011c int16_t  chase_height              ; numpad +/-

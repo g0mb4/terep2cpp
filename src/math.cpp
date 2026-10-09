@@ -4,63 +4,63 @@
 #include "terep.hpp"
 
 /* orig 1000:2aad */
-int16_t fx_sin(uint16_t angle)
+Q15 fx_sin(Angle a)
 {
-    uint16_t t = angle & 0x7fff;
+    uint16_t t = a.bits() & 0x7fff;
     if (t & 0x4000)
         t = 0x8000 - t;                 /* mirror the second quadrant */
-    int16_t v = G->sin_table[t >> 4];
-    return (angle & 0x8000) ? (int16_t)-v : v;
+    Q15 v = { G->sin_table[t >> 4] };
+    return (a.bits() & 0x8000) ? -v : v;
 }
 
 /* orig 1000:2ad8 */
-int16_t fx_cos(uint16_t angle)
+Q15 fx_cos(Angle a)
 {
-    uint16_t t = angle & 0x7fff;
+    uint16_t t = a.bits() & 0x7fff;
     if (t & 0x4000)
         t -= 0x4000;
     else
         t = 0x4000 - t;
-    int16_t v = G->sin_table[t >> 4];
-    uint16_t quadrant = angle >> 14;
-    return (quadrant == 1 || quadrant == 2) ? (int16_t)-v : v;
+    Q15 v = { G->sin_table[t >> 4] };
+    uint16_t quadrant = a.bits() >> 14;
+    return (quadrant == 1 || quadrant == 2) ? -v : v;
 }
 
 /* atan(num/den) for 0 <= num < den, orig 1000:2b3b */
-static uint16_t atan_ratio(uint16_t num, uint16_t den)
+static Angle atan_ratio(uint16_t num, uint16_t den)
 {
     uint16_t q = (uint16_t)(((uint32_t)num << 16) / den);
-    return G->atan_table[q >> 8];
+    return { (int16_t)G->atan_table[q >> 8] };
 }
 
 /* both arguments >= 0, orig 1000:2b2d */
-static uint16_t atan_first_quadrant(int16_t y, int16_t x)
+static Angle atan_first_quadrant(int16_t y, int16_t x)
 {
     if (y > x)
-        return (uint16_t)(0x4000 - atan_ratio(x, y));
+        return DEG90 - atan_ratio(x, y);
     if (y < x)
         return atan_ratio(y, x);
-    return 0x2000;
+    return DEG45;
 }
 
 /* y >= 0, orig 1000:2b1f */
-static uint16_t atan_upper_half(int16_t y, int16_t x)
+static Angle atan_upper_half(int16_t y, int16_t x)
 {
     if (x < 0)
-        return (uint16_t)(0x8000 - atan_first_quadrant(y, (int16_t)~x));
+        return DEG180 - atan_first_quadrant(y, (int16_t)~x);
     if (x == 0)
-        return 0x4000;
+        return DEG90;
     return atan_first_quadrant(y, x);
 }
 
 /* Angle of the vector (x, y), orig 1000:2b08.  Negative coordinates are
  * folded with NOT rather than NEG, as in the original. */
-uint16_t fx_atan2(int16_t y, int16_t x)
+Angle fx_atan2(int16_t y, int16_t x)
 {
     if (y < 0)
-        return (uint16_t)-atan_upper_half((int16_t)~y, x);
+        return -atan_upper_half((int16_t)~y, x);
     if (y == 0)
-        return x < 0 ? 0x8000 : 0;
+        return x < 0 ? DEG180 : Angle{};
     return atan_upper_half(y, x);
 }
 
@@ -68,11 +68,11 @@ uint16_t fx_atan2(int16_t y, int16_t x)
  * better conditioned.  orig 1000:26dd */
 int32_t vec2_length(int16_t a, int16_t b)
 {
-    uint16_t angle = fx_atan2(a, b);
-    uint8_t octant_bits = (angle >> 8) & 0x60;
+    Angle angle = fx_atan2(a, b);
+    uint8_t octant_bits = (angle.bits() >> 8) & 0x60;
     if (octant_bits == 0x20 || octant_bits == 0x40)
-        return ((int32_t)a << 15) / fx_sin(angle);
-    return ((int32_t)b << 15) / fx_cos(angle);
+        return ((int32_t)a << 15) / fx_sin(angle).raw;
+    return ((int32_t)b << 15) / fx_cos(angle).raw;
 }
 
 /* orig 1000:271d */
@@ -98,39 +98,39 @@ void project(int16_t x, int16_t depth, int16_t z, int16_t *sx, int16_t *sz)
 
 /* Row vector times matrix, every product rounded to Q15 on its own.
  * orig 1000:277e */
-void rotate(const int16_t m[9], int16_t x, int16_t y, int16_t z, int16_t out[3])
+void rotate(const Q15 m[9], int16_t x, int16_t y, int16_t z, int16_t out[3])
 {
-    out[0] = (int16_t)(mul_q15(x, m[0]) + mul_q15(y, m[3]) + mul_q15(z, m[6]));
-    out[1] = (int16_t)(mul_q15(x, m[1]) + mul_q15(y, m[4]) + mul_q15(z, m[7]));
-    out[2] = (int16_t)(mul_q15(x, m[2]) + mul_q15(y, m[5]) + mul_q15(z, m[8]));
+    out[0] = (int16_t)(x * m[0] + y * m[3] + z * m[6]);
+    out[1] = (int16_t)(x * m[1] + y * m[4] + z * m[7]);
+    out[2] = (int16_t)(x * m[2] + y * m[5] + z * m[8]);
 }
 
-/* Rotation matrix from (roll, pitch, yaw).  orig 1000:2989 */
-void build_matrix(const int16_t angles[3], int16_t m[9])
+/* Rotation matrix from roll, pitch and yaw.  orig 1000:2989 */
+void build_matrix(Angles a, Q15 m[9])
 {
-    int16_t s0 = fx_sin(angles[0]), c0 = fx_cos(angles[0]);
-    int16_t s1 = fx_sin(angles[1]), c1 = fx_cos(angles[1]);
-    int16_t s2 = (int16_t)-fx_sin(angles[2]), c2 = fx_cos(angles[2]);
+    Q15 s0 = fx_sin(a.roll), c0 = fx_cos(a.roll);
+    Q15 s1 = fx_sin(a.pitch), c1 = fx_cos(a.pitch);
+    Q15 s2 = -fx_sin(a.yaw), c2 = fx_cos(a.yaw);
 
-    int16_t s0s1 = mul_q15(s0, s1);
-    int16_t c0c2 = mul_q15(c0, c2);
-    int16_t s2c0 = mul_q15(s2, c0);
+    Q15 s0s1 = s0 * s1;
+    Q15 c0c2 = c0 * c2;
+    Q15 s2c0 = s2 * c0;
 
-    m[0] = (int16_t)(c0c2 + neg_sat16(mul_q15(s0s1, s2)));
-    m[1] = neg_sat16((int16_t)(mul_q15(s0s1, c2) + s2c0));
-    m[2] = neg_sat16(mul_q15(s0, c1));
-    m[3] = mul_q15(s2, c1);
-    m[4] = mul_q15(c2, c1);
-    m[5] = neg_sat16(s1);
-    m[6] = (int16_t)(mul_q15(s2c0, s1) + mul_q15(c2, s0));
-    m[7] = (int16_t)(mul_q15(c0c2, s1) + neg_sat16(mul_q15(s0, s2)));
-    m[8] = mul_q15(c0, c1);
+    m[0] = c0c2 + (s0s1 * s2).neg_sat();
+    m[1] = (s0s1 * c2 + s2c0).neg_sat();
+    m[2] = (s0 * c1).neg_sat();
+    m[3] = s2 * c1;
+    m[4] = c2 * c1;
+    m[5] = s1.neg_sat();
+    m[6] = s2c0 * s1 + c2 * s0;
+    m[7] = c0c2 * s1 + (s0 * s2).neg_sat();
+    m[8] = c0 * c1;
 }
 
 /* orig 1000:27f1 */
-void transpose(int16_t m[9])
+void transpose(Q15 m[9])
 {
-    int16_t t;
+    Q15 t;
     t = m[1]; m[1] = m[3]; m[3] = t;
     t = m[2]; m[2] = m[6]; m[6] = t;
     t = m[5]; m[5] = m[7]; m[7] = t;

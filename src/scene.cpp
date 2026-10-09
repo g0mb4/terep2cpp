@@ -46,9 +46,9 @@ bool view_transform_fine(Vec3 d, ProjVertex *out)
         return false;
     if (render_scale == 1)
         return true;
-    const int16_t *m = G->view_matrix;
+    const Q15 *m = G->view_matrix;
     auto row = [&](int c) {                                 /* 16.16 */
-        return ((int64_t)d.x * m[c] + (int64_t)d.y * m[3 + c] + (int64_t)d.z * m[6 + c]) >> 15;
+        return ((int64_t)d.x * m[c].raw + (int64_t)d.y * m[3 + c].raw + (int64_t)d.z * m[6 + c].raw) >> 15;
     };
     int64_t x = row(0), depth = -row(1), z = row(2);
     if (depth < 0x10000)
@@ -342,8 +342,7 @@ static void draw_grid_cell(uint8_t row_c, uint8_t col_c, ProjVertex *lo, ProjVer
 /* orig 1000:1965 (and its second half, FUN_1965_NP) */
 void draw_terrain()
 {
-    uint16_t yaw = (uint16_t)G->eye_angles[2];
-    uint8_t octant = (uint8_t)(yaw >> 8);
+    uint8_t octant = (uint8_t)(G->eye_angles.yaw.bits() >> 8);
 
     /* view mostly along x: traverse by columns */
     bool swap_xy = !parity_even(octant & 0x60);

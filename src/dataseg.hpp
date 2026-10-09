@@ -16,9 +16,9 @@ struct PACKED DataSeg {
     uint8_t _pad_00a8[0x2];
     Pos eye;                                 /* 00aa: camera position (16.16) */
     uint8_t _pad_00b6[0xc];
-    int16_t eye_angles[3];                   /* 00c2: roll, pitch, yaw of the camera */
+    Angles eye_angles;                       /* 00c2: orientation of the camera */
     int16_t cars_center[3];                  /* 00c8: average car position (camera 5) */
-    int16_t view_matrix[9];                  /* 00ce: Q15 rotation, world -> camera */
+    Q15 view_matrix[9];                      /* 00ce: rotation, world -> camera */
     Vec3 cam_axis_x;                         /* 00e0: axes of the followed car (cameras 1 and 2) */
     Vec3 cam_axis_y;                         /* 00ec */
     uint8_t _pad_00f8[0x24];

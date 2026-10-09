@@ -44,18 +44,18 @@ void Car::read_controls(const uint8_t binding[6])
     uint32_t speed = (uint32_t)(wheel_speed[0] + wheel_speed[1]);
     step = (int16_t)(0x40 - (uint16_t)(speed >> 16));
 
-    if (left && steer >= -0x2000) {
-        if (steer >= 0)
+    if (left && steer >= -DEG45) {
+        if (steer >= Angle{})
             step <<= 2;
-        steer -= step;
+        steer -= Angle{ step };
     }
-    if (right && steer <= 0x2000) {
-        if (steer < 0)
+    if (right && steer <= DEG45) {
+        if (steer < Angle{})
             step <<= 2;
-        steer += step;
+        steer += Angle{ step };
     }
-    if (!left && !right && steer != 0)
-        steer -= steer > 0 ? 0x50 : -0x50;
+    if (!left && !right && steer != Angle{})
+        steer -= Angle{ (int16_t)(steer > Angle{} ? 0x50 : -0x50) };
 
     handbrake = pressed(binding[4]);
 }
@@ -131,7 +131,7 @@ static struct {
 void Car::compute_steered_dir()
 {
     Vec3 ax = axis_x(), ay = axis_y();
-    int32_t s = q31(fx_sin(steer_used)), c = q31(fx_cos(steer_used));
+    int32_t s = fx_sin(steer_used).q31(), c = fx_cos(steer_used).q31();
 
     wheel_dirs.straight = ay;
     wheel_dirs.steered = { (mul_hi32(ay.x, c) - mul_hi32(ax.x, s)) << 1,
@@ -279,13 +279,13 @@ void Car::update_springs()
 
 /* The contact frame: n1 = (sin a, cos a), n2 = (sin b, cos b) as Q31.
  * The surface normal is (-n1.sin, -n2.sin, n1.cos * n2.cos). */
-static void set_contact_frame(int16_t s1, int16_t c1, int16_t s2, int16_t c2)
+static void set_contact_frame(Q15 s1, Q15 c1, Q15 s2, Q15 c2)
 {
     /* only the high words are ever written; the low words stay 0 */
-    G->ground_n1[0] = q31(s1);
-    G->ground_n1[1] = q31(c1);
-    G->ground_n2[0] = q31(s2);
-    G->ground_n2[1] = q31(c2);
+    G->ground_n1[0] = s1.q31();
+    G->ground_n1[1] = c1.q31();
+    G->ground_n2[0] = s2.q31();
+    G->ground_n2[1] = c2.q31();
 }
 
 static int32_t n1s() { return G->ground_n1[0]; }
@@ -381,7 +381,7 @@ static void wheel_friction(CarVertex &v)
 }
 
 /* Heading of the wheel in the contact plane.  orig 1000:4c26 */
-static uint16_t wheel_heading(Vec3 dir)
+static Angle wheel_heading(Vec3 dir)
 {
     int16_t a = (int16_t)(-(int16_t)mul_hi32(dir.x >> 4, n1c()) - (int16_t)mul_hi32(dir.z >> 4, n1s()));
     int16_t b = (int16_t)((int16_t)mul_hi32(dir.y >> 4, n2c()) + (int16_t)mul_hi32(dir.z >> 4, n2s()));
@@ -425,9 +425,9 @@ void Car::ground_contact(CarVertex &v, uint16_t index)
     Vec3 dir = wheel_direction(index, &speed, mulq31(v.vel.z, n2s()));
     G->tmp_wheel_dir = dir;
     contact.wheel_speed = -speed;
-    uint16_t heading = wheel_heading(dir);
-    contact.slip_cos = q31(fx_cos(heading));
-    contact.slip_sin = q31(fx_sin(heading));
+    Angle heading = wheel_heading(dir);
+    contact.slip_cos = fx_cos(heading).q31();
+    contact.slip_sin = fx_sin(heading).q31();
     int32_t w2 = contact.wheel_speed << 1;
     contact.slide[0] += mul_hi32(w2, contact.slip_sin);
     contact.slide[1] -= mul_hi32(w2, contact.slip_cos);
@@ -452,30 +452,30 @@ void Car::update_points()
             int shift = G->surface_damp_shift[G->ground_surface >> 4];
             if (shift)
                 v.vel -= v.vel >> shift;
-            uint16_t a = fx_atan2(G->ground_slope_x, 0x100);
-            uint16_t b = fx_atan2(G->ground_slope_y, 0x100);
+            Angle a = fx_atan2(G->ground_slope_x, 0x100);
+            Angle b = fx_atan2(G->ground_slope_y, 0x100);
             set_contact_frame(fx_sin(a), fx_cos(a), fx_sin(b), fx_cos(b));
             ground_contact(v, i);
         }
 
         /* invisible walls half a cell inside the map border */
         if ((uint16_t)(v.pos.x.units() - v.radius) < 0x80) {
-            set_contact_frame(INT16_MIN, 0, 0, 0x7f00);
+            set_contact_frame({ INT16_MIN }, { 0 }, { 0 }, { 0x7f00 });
             G->ground_surface = 0;
             ground_contact(v, i);
         }
         if ((uint16_t)(v.pos.y.units() - v.radius) < 0x80) {
-            set_contact_frame(0, 0x7fff, INT16_MIN, 0);
+            set_contact_frame({ 0 }, { 0x7fff }, { INT16_MIN }, { 0 });
             G->ground_surface = 0;
             ground_contact(v, i);
         }
         if ((uint16_t)(v.pos.x.units() + v.radius) > 0xfe80) {
-            set_contact_frame(0x7fff, 0, 0, 0x7fff);
+            set_contact_frame({ 0x7fff }, { 0 }, { 0 }, { 0x7fff });
             G->ground_surface = 0;
             ground_contact(v, i);
         }
         if ((uint16_t)(v.pos.y.units() + v.radius) > 0xfe80) {
-            set_contact_frame(0, 0x7fff, 0x7fff, 0);
+            set_contact_frame({ 0 }, { 0x7fff }, { 0x7fff }, { 0 });
             G->ground_surface = 0;
             ground_contact(v, i);
         }

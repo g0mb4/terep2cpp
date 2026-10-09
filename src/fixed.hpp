@@ -6,7 +6,8 @@
  * bit-for-bit, so the rest of the code can read like ordinary C++.
  *
  * Conventions used throughout the code:
- *   - angles are 16-bit "binary degrees": 0x10000 == 360 deg, 0x4000 == 90 deg
+ *   - angles are 16-bit "binary degrees" (Angle): 0x10000 == 360 deg,
+ *     0x4000 == 90 deg
  *   - sin/cos values and rotation matrices are Q15 (0x7fff ~= 1.0)
  *   - world positions are unsigned (Pos): 8.24 in terrain cells, or
  *     16.16 in map units (256 units = one cell), with (0,0,0) at the
@@ -63,3 +64,41 @@ inline int16_t abs16(int16_t v)
 {
     return v < 0 ? (int16_t)-v : v;
 }
+
+/* An angle in binary degrees: 0x10000 == 360 deg, so it wraps around by
+ * itself.  Compared and shifted as signed (-180..180 deg), the way the
+ * original does. */
+struct Angle {
+    int16_t raw;
+
+    uint16_t bits() const { return (uint16_t)raw; }    /* 0..0xffff, for quadrant/octant tests */
+
+    Angle operator+(Angle o) const { return { (int16_t)(raw + o.raw) }; }
+    Angle operator-(Angle o) const { return { (int16_t)(raw - o.raw) }; }
+    Angle operator-() const { return { (int16_t)-raw }; }
+    Angle operator>>(int n) const { return { (int16_t)(raw >> n) }; }
+    Angle &operator+=(Angle o) { return *this = *this + o; }
+    Angle &operator-=(Angle o) { return *this = *this - o; }
+    bool operator==(Angle o) const { return raw == o.raw; }
+    bool operator!=(Angle o) const { return raw != o.raw; }
+    bool operator<(Angle o) const { return raw < o.raw; }
+    bool operator>(Angle o) const { return raw > o.raw; }
+    bool operator<=(Angle o) const { return raw <= o.raw; }
+    bool operator>=(Angle o) const { return raw >= o.raw; }
+};
+
+constexpr Angle DEG45 = { 0x2000 }, DEG90 = { 0x4000 }, DEG180 = { INT16_MIN };
+
+/* A Q15 fraction (0x7fff ~= 1.0): sines, cosines, rotation matrices. */
+struct Q15 {
+    int16_t raw;
+
+    Q15 operator+(Q15 o) const { return { (int16_t)(raw + o.raw) }; }
+    Q15 operator-() const { return { (int16_t)-raw }; }
+    Q15 operator*(Q15 o) const { return { mul_q15(raw, o.raw) }; }
+    Q15 neg_sat() const { return { neg_sat16(raw) }; }
+    int32_t q31() const { return ::q31(raw); }
+};
+
+/* An integer scaled by a Q15 fraction, truncated to 16 bits. */
+inline int16_t operator*(int16_t v, Q15 f) { return mul_q15(v, f.raw); }

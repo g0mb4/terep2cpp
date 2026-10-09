@@ -59,7 +59,7 @@ O resto (textura afim, Gouraud, pontilhado) é o rasterizador original, só mais
 src/            o jogo (não depende de SO nem de biblioteca)
   terep.hpp     tipos de valor (Vec3, Coord, Pos), estruturas (Car, CarVertex, CarSpring,
                 Particle, ChaseCam, ProjVertex, PcxHeader...) e protótipos
-  fixed.hpp     ponto fixo: ângulos (0x10000 = 360°), seno/cosseno Q15, multiplicações
+  fixed.hpp     ponto fixo: Angle (0x10000 = 360°), Q15 (seno/cosseno, matrizes), multiplicações
   dataseg.def   mapa do segmento de dados original, campo a campo (fonte da verdade)
   dataseg_init.cpp  conteúdo inicial do segmento (tabelas, fonte, nomes, ajustes), no código
   font.pbm      a fonte (PBM texto, glifos de 5x5 um embaixo do outro), embutida com #embed
@@ -95,7 +95,12 @@ C++ só onde deixa o código mais claro; o resto continua no estilo clássico (f
   com `+ - += -= >>`; `Coord` (uma coordenada de posição, 8.24 em células sem sinal, com
   `cell()`, `units()`, `Coord - Coord` = distância com sinal) e `Pos` (três `Coord`, com
   `Pos + Vec3` e `Pos - Pos` = `Vec3`). Somar uma posição a outra não compila, o que já pegaria
-  o tipo de confusão que existia entre int32 e uint32.
+  o tipo de confusão que existia entre int32 e uint32. `Angle` (0x10000 = 360°, dá a volta
+  sozinho, compara e desloca com sinal como o original; `DEG45`, `DEG90`, `DEG180`) e `Q15`
+  (seno/cosseno e matrizes; `Q15 * Q15`, `int16_t * Q15`, `neg_sat()`, `q31()`): `fx_sin`,
+  `fx_cos` e `fx_atan2` usam esses tipos, assim como `build_matrix`, `rotate`, as câmeras
+  (`Angles` com `roll`, `pitch`, `yaw`) e o volante (`Car::steer`). `.raw` dá o valor cru
+  onde o original faz conta com ele (deslocamentos, produtos de 32 bits).
 - **Métodos no carro.** `Car` é o cabeçalho do `carN.dat` com `vertices()`, `springs()` e a física
   como métodos (`car.update_springs()`, `car.jump(...)`); `CarSpring::type()/softness()`,
   `CarVertex::is_wheel()`, `Particle::ICE_CHIP` etc.
@@ -108,7 +113,8 @@ Uma regra que pesa: **as estruturas que moram no segmento de dados são `packed`
 que bater com o segmento original) e o C++ não deixa ligar uma referência a um campo de struct
 packed (`int &x = G->gravity` não compila). Nesses casos o código usa uma cópia e grava de volta,
 ou um ponteiro. Chamar método em campo packed funciona normalmente. Os carros (`Car`,
-`CarVertex`, `CarSpring`) e os tipos de valor (`Vec3`, `Coord`, `Pos`) são structs normais.
+`CarVertex`, `CarSpring`) e os tipos de valor (`Vec3`, `Coord`, `Pos`, `Angle`, `Q15`) são
+structs normais.
 
 ### Por que ainda existe um "segmento de dados"
 

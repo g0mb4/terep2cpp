@@ -4,7 +4,7 @@
       resto dinamicamente.
 - [x] Parar de carregar os `carN.dat` direto na memória: interpretar o arquivo original e
       carregar de forma inteligente, para que as structs não precisem mais ser `packed`.
-- [ ] Tipos `Angle` (0x10000 = 360°) e `Q15` (seno/cosseno, matrizes), como `Pos`/`Vec3`, no
+- [x] Tipos `Angle` (0x10000 = 360°) e `Q15` (seno/cosseno, matrizes), como `Pos`/`Vec3`, no
       lugar de `uint16_t`/`int16_t` soltos (`build_matrix`, câmeras, rodas).
 - [ ] Quebrar o `DataSeg` em estruturas por assunto (jogo, câmeras, renderizador, tabelas).
       Depende dos dois primeiros itens.

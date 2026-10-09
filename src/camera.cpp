@@ -29,19 +29,19 @@ static void camera_on_car(Car &car)
     int16_t xx = mid16(G->cam_axis_x.x), xy = mid16(G->cam_axis_x.y), xz = mid16(G->cam_axis_x.z);
     int16_t yx = mid16(G->cam_axis_y.x), yy = mid16(G->cam_axis_y.y), yz = mid16(G->cam_axis_y.z);
 
-    uint16_t yaw = fx_atan2((int16_t)-yx, yy);
-    G->eye_angles[2] = (int16_t)yaw;
+    Angle yaw = fx_atan2((int16_t)-yx, yy);
+    G->eye_angles.yaw = yaw;
 
     /* roll: the side axis against the horizontal, signed by whether that
      * axis points left or right of the heading */
     int16_t side_len = (int16_t)vec2_length(xx, xy);
-    uint16_t side_dir = fx_atan2((int16_t)-xx, xy);
-    if ((int16_t)(yaw - side_dir) < 0)
+    Angle side_dir = fx_atan2((int16_t)-xx, xy);
+    if (yaw - side_dir < Angle{})
         side_len = (int16_t)-side_len;
-    G->eye_angles[0] = (int16_t)-fx_atan2(xz, side_len);
+    G->eye_angles.roll = -fx_atan2(xz, side_len);
 
     int16_t fwd_len = (int16_t)vec2_length(yx, yy);
-    G->eye_angles[1] = (int16_t)-fx_atan2(yz, fwd_len);
+    G->eye_angles.pitch = -fx_atan2(yz, fwd_len);
 }
 
 /* orig 1000:073f */
@@ -50,27 +50,31 @@ static void camera_on_car_smooth(Car &car)
     eye_at_vertex(car);
     uint16_t ex = G->eye.x.units(), ey = G->eye.y.units(), ez = G->eye.z.units();
 
-    uint16_t yaw = fx_atan2((int16_t)-mid16(G->cam_axis_y.x), mid16(G->cam_axis_y.y));
-    G->eye_angles[2] = (int16_t)yaw;
+    Angle yaw = fx_atan2((int16_t)-mid16(G->cam_axis_y.x), mid16(G->cam_axis_y.y));
+    G->eye_angles.yaw = yaw;
+
+    /* the ground at (sin, -cos) of an angle >> shift from the eye */
+    auto height_towards = [&](Angle a, int shift) {
+        return terrain_height((uint16_t)((fx_sin(a).raw >> shift) + ex),
+                              (uint16_t)(((-fx_cos(a)).raw >> shift) + ey));
+    };
 
     /* pitch towards the ground 1/32 of the cos/sin unit ahead */
-    int16_t ahead = terrain_height((uint16_t)((fx_sin(yaw) >> 5) + ex),
-                                   (uint16_t)(((int16_t)-fx_cos(yaw) >> 5) + ey));
-    int16_t pitch = (int16_t)fx_atan2((int16_t)(ahead - ez), 0x3ff);
-    G->eye_angles[1] = (int16_t)(G->eye_angles[1] + ((int16_t)(pitch - G->eye_angles[1]) >> 2));
+    int16_t ahead = height_towards(yaw, 5);
+    Angle pitch = fx_atan2((int16_t)(ahead - ez), 0x3ff);
+    G->eye_angles.pitch += (pitch - G->eye_angles.pitch) >> 2;
 
     /* roll from the height difference ahead-left / ahead-right */
-    uint16_t a = (uint16_t)(yaw + 0x2000), b = (uint16_t)(yaw - 0x2000);
-    int16_t h1 = terrain_height((uint16_t)((fx_sin(a) >> 6) + ex), (uint16_t)(((int16_t)-fx_cos(a) >> 6) + ey));
-    int16_t h2 = terrain_height((uint16_t)((fx_sin(b) >> 6) + ex), (uint16_t)(((int16_t)-fx_cos(b) >> 6) + ey));
-    int16_t roll = (int16_t)fx_atan2((int16_t)(h2 - h1), 0x1ff);
-    G->eye_angles[0] = (int16_t)(G->eye_angles[0] + ((int16_t)(roll - G->eye_angles[0]) >> 2));
+    int16_t h1 = height_towards(yaw + DEG45, 6);
+    int16_t h2 = height_towards(yaw - DEG45, 6);
+    Angle roll = fx_atan2((int16_t)(h2 - h1), 0x1ff);
+    G->eye_angles.roll += (roll - G->eye_angles.roll) >> 2;
 }
 
 /* Heading towards a target. */
-static int16_t heading_to(int16_t dx, int16_t dy)
+static Angle heading_to(int16_t dx, int16_t dy)
 {
-    return (int16_t)fx_atan2(dx, (int16_t)-dy);
+    return fx_atan2(dx, (int16_t)-dy);
 }
 
 /* orig 1000:0828 */
@@ -85,21 +89,20 @@ static void camera_fixed(Car &car, const ChaseCam &cam)
     Pos ref = car.ref_vertex().pos;
     int16_t dx = (int16_t)(ref.x.units() - ex);
     int16_t dy = (int16_t)(ref.y.units() - ey);
-    G->eye_angles[2] = heading_to(dx, dy);
+    G->eye_angles.yaw = heading_to(dx, dy);
     int16_t dist = (int16_t)vec2_length(dx, (int16_t)-dy);
-    G->eye_angles[1] = (int16_t)fx_atan2((int16_t)(ref.z.units() - G->eye.z.units()), dist);
-    G->eye_angles[0] = 0;
+    G->eye_angles.pitch = fx_atan2((int16_t)(ref.z.units() - G->eye.z.units()), dist);
+    G->eye_angles.roll = {};
 }
 
 /* Put the camera chase_distance behind target along heading, and smooth
  * its height towards chase_height above the ground (never less than 40
  * above it). */
-static Pos chase_follow(uint16_t tx, uint16_t ty, int16_t heading, Pos p)
+static Pos chase_follow(uint16_t tx, uint16_t ty, Angle heading, Pos p)
 {
-    int16_t s = fx_sin((uint16_t)heading), c = fx_cos((uint16_t)heading);
     int16_t d2 = (int16_t)(G->chase_distance << 1);
-    int16_t bx = (int16_t)(((int32_t)s * d2) >> 16);
-    int16_t by = (int16_t)(((int32_t)c * d2) >> 16);
+    int16_t bx = mul_hi16(fx_sin(heading).raw, d2);
+    int16_t by = mul_hi16(fx_cos(heading).raw, d2);
     p.x.set_units((uint16_t)(tx - bx));
     p.y.set_units((uint16_t)(ty + by));
 
@@ -113,10 +116,10 @@ static Pos chase_follow(uint16_t tx, uint16_t ty, int16_t heading, Pos p)
     return p;
 }
 
-static int16_t smooth_pitch(int16_t current, int16_t dz)
+static Angle smooth_pitch(Angle current, int16_t dz)
 {
-    int16_t target = (int16_t)fx_atan2(dz, G->chase_distance);
-    return (int16_t)(current + ((int16_t)(target - current) >> 2));
+    Angle target = fx_atan2(dz, G->chase_distance);
+    return current + ((target - current) >> 2);
 }
 
 /* orig 1000:0893 */
@@ -127,11 +130,9 @@ static void camera_chase(Car &car, ChaseCam &cam)
     cam.yaw = heading_to((int16_t)(rx - cam.pos.x.units()), (int16_t)(ry - cam.pos.y.units()));
     cam.pos = chase_follow(rx, ry, cam.yaw, cam.pos);
     cam.pitch = smooth_pitch(cam.pitch, (int16_t)(ref.z.units() - cam.pos.z.units()));
-    cam.roll = 0;
+    cam.roll = {};
 
-    G->eye_angles[2] = cam.yaw;
-    G->eye_angles[1] = cam.pitch;
-    G->eye_angles[0] = cam.roll;
+    G->eye_angles = { cam.roll, cam.pitch, cam.yaw };
     G->eye = cam.pos;
 }
 
@@ -151,10 +152,10 @@ static void camera_all_cars()
     G->cars_center[2] = (int16_t)((int32_t)sz / (int32_t)n);
 
     uint16_t cx = (uint16_t)G->cars_center[0], cy = (uint16_t)G->cars_center[1];
-    G->eye_angles[2] = heading_to((int16_t)(cx - G->eye.x.units()), (int16_t)(cy - G->eye.y.units()));
-    G->eye = chase_follow(cx, cy, G->eye_angles[2], G->eye);
-    G->eye_angles[1] = smooth_pitch(G->eye_angles[1], (int16_t)(G->cars_center[2] - G->eye.z.units()));
-    G->eye_angles[0] = 0;
+    G->eye_angles.yaw = heading_to((int16_t)(cx - G->eye.x.units()), (int16_t)(cy - G->eye.y.units()));
+    G->eye = chase_follow(cx, cy, G->eye_angles.yaw, G->eye);
+    G->eye_angles.pitch = smooth_pitch(G->eye_angles.pitch, (int16_t)(G->cars_center[2] - G->eye.z.units()));
+    G->eye_angles.roll = {};
 }
 
 /* Place the eye for one view.  orig f_cam_select */

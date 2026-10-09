@@ -80,12 +80,12 @@ uint16_t car_read(Car &car, FILE *f)
     size_t vo = r.u16(0), so = r.u16(2), mo = r.u16(4);
     car.unk_06 = r.u16(6);
     car.drive = r.u16(8);
-    car.steer = r.i16(0x0a);
+    car.steer = { r.i16(0x0a) };
     car.throttle = r.i16(0x0c);
     car.handbrake = r.u16(0x0e);
     for (int i = 0; i < 3; i++)
         car.mid[i] = r.i16(0x10 + 2 * i);
-    car.steer_used = r.i16(0x16);
+    car.steer_used = { r.i16(0x16) };
     car.throttle_used = r.i16(0x18);
     car.cell = r.u16(0x1a);
     car.texture_seg = r.u16(0x1e);
@@ -120,12 +120,12 @@ std::vector<uint8_t> car_write(const Car &car, uint16_t ds_base)
     w.u16(4, (uint16_t)mo);
     w.u16(6, car.unk_06);
     w.u16(8, car.drive);
-    w.u16(0x0a, (uint16_t)car.steer);
+    w.u16(0x0a, car.steer.bits());
     w.u16(0x0c, (uint16_t)car.throttle);
     w.u16(0x0e, car.handbrake);
     for (int i = 0; i < 3; i++)
         w.u16(0x10 + 2 * i, (uint16_t)car.mid[i]);
-    w.u16(0x16, (uint16_t)car.steer_used);
+    w.u16(0x16, car.steer_used.bits());
     w.u16(0x18, (uint16_t)car.throttle_used);
     w.u16(0x1a, car.cell);
     w.u16(0x1e, car.texture_seg);
