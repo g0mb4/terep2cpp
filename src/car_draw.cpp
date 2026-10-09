@@ -10,6 +10,7 @@
  *   [2n]     vertex 0 moved along the steered front axle
  *   [2n + 1] vertex 1 moved the other way
  */
+#include <map>
 #include "terep.hpp"
 
 static void transform_point(Pos p, ProjVertex *out)
@@ -48,13 +49,14 @@ static void transform_car(Car &car)
 /* ------------------------------------------------------------------------
  * Model bytecode
  *
- * The program counter is an offset in car.model.code (in the original, a data
- * segment offset); all operands are 16-bit little-endian unless noted.  Point operands index car_proj.  "hidden"
- * is the result of the last facing test (shared with the terrain code).
- * Only the low 5 bits of an opcode count.
+ * The model is a small program in the car file.  A program counter is an
+ * offset in car.model (in the original, a data segment offset); all
+ * operands are 16-bit little-endian unless noted.  Point operands index
+ * car_proj.  "hidden" is the result of the last facing test (shared with
+ * the terrain code).  Only the low 5 bits of an opcode count.
  * ---------------------------------------------------------------------- */
 
-enum Program::Op : uint8_t {
+enum ModelOpcode : uint8_t {
     OP_END = 0,         /* also 11..15: end of (sub)program */
     OP_PIXEL = 1,       /* p, color             plot a pixel */
     OP_NEARER = 2,      /* p, q, -              hidden = p is nearer than q */
@@ -74,23 +76,180 @@ enum Program::Op : uint8_t {
     OP_JUMP_HIDDEN = 20,    /* rel              jump if hidden */
 };
 
+/* ------------------------------------------------------------------------
+ * Decoding, at load time
+ *
+ * Every instruction reachable from pc 0 is decoded into a ModelOp, and the
+ * list is kept in program order, so falling through goes to the next
+ * entry; jump, call and SORT2 targets become indices.  A target in the
+ * middle of an instruction (code that overlaps itself) is refused.
+ * ---------------------------------------------------------------------- */
+
+namespace {
+
+struct Decoder {
+    const std::vector<uint8_t> &code;
+
+    /* Reads past the end give 0 (the original would read whatever follows
+     * the car in the data segment). */
+    uint8_t  rd8(uint32_t pc) const { return pc < code.size() ? code[pc] : 0; }
+    uint16_t rd16(uint32_t pc) const { return (uint16_t)(rd8(pc) | rd8(pc + 1) << 8); }
+    uint32_t rd32(uint32_t pc) const { return rd16(pc) | (uint32_t)rd16(pc + 2) << 16; }
+
+    /* The n + 1 corners of a polygon at pc; attr_size: 0, 2 or 4 bytes. */
+    void outline(ModelOp &o, uint32_t pc, uint8_t n, int attr_size) const
+    {
+        for (int i = 0; i <= n; i++, pc += 2 + attr_size) {
+            ModelOp::Vertex v = { rd16(pc), 0 };
+            if (attr_size == 2)
+                v.attr = rd16(pc + 2);
+            else if (attr_size == 4)
+                v.attr = rd32(pc + 2);
+            o.outline.push_back(v);
+        }
+    }
+
+    /* The instruction at pc; returns its length.  Targets are pcs here.
+     * *falls is set when the next instruction runs after it. */
+    uint32_t decode(uint32_t pc, ModelOp &o, bool *falls) const
+    {
+        uint8_t raw = rd8(pc++) & 0x1f;
+        o.op = (ModelOpcode)(raw <= OP_WHEEL || (raw >= OP_SORT2 && raw <= OP_JUMP_HIDDEN) ? raw : OP_END);
+        *falls = o.op != OP_END && o.op != OP_JUMP;
+        switch (o.op) {
+        case OP_PIXEL:
+            o.p[0] = rd16(pc);
+            o.word = rd16(pc + 2);
+            return 5;
+        case OP_NEARER:
+        case OP_FACING:
+            for (int i = 0; i < 3; i++)
+                o.p[i] = rd16(pc + 2 * i);
+            return 7;
+        case OP_FLAT: {
+            uint8_t n = rd8(pc);
+            outline(o, pc + 1, n, 0);
+            o.word = rd16(pc + 1 + (n + 1) * 2);
+            return 1 + 1 + (n + 1) * 2 + 2;
+        }
+        case OP_SHADED:
+        case OP_TEXTURED: {
+            uint8_t n = rd8(pc);
+            int attr_size = o.op == OP_SHADED ? 2 : 4;
+            outline(o, pc + 1, n, attr_size);
+            return 1 + 1 + (n + 1) * (2 + attr_size);
+        }
+        case OP_SHADED_TAB: {
+            uint8_t n = rd8(pc);
+            o.word = rd16(pc + 1);
+            outline(o, pc + 3, n, 2);
+            return 1 + 3 + (n + 1) * 4;
+        }
+        case OP_SPRITE:
+            o.p[0] = rd16(pc);
+            o.sprite.size = (int16_t)rd16(pc + 2);
+            for (int i = 0; i < 4; i++)
+                o.sprite.uv[i] = rd32(pc + 4 + 4 * i);
+            return 21;
+        case OP_WHEEL:
+            o.p[0] = rd16(pc);
+            o.p[1] = rd16(pc + 2);
+            for (int v = 0; v < 9; v++) {
+                uint32_t sp = pc + 6 + v * 20;
+                ModelOp::WheelView w = { (int16_t)rd16(sp), (int16_t)rd16(sp + 2), {} };
+                for (int i = 0; i < 4; i++)
+                    w.uv[i] = rd32(sp + 4 + 4 * i);
+                o.views.push_back(w);
+            }
+            return 1 + 0xba;
+        case OP_SORT2:
+            o.target[0] = (uint16_t)(pc + rd16(pc));
+            o.target[1] = (uint16_t)(pc + rd16(pc + 2));
+            return 5;
+        case OP_JUMP:
+        case OP_CALL:
+        case OP_JUMP_VISIBLE:
+        case OP_JUMP_HIDDEN:
+            o.target[0] = (uint16_t)(pc + 2 + rd16(pc));
+            return 3;
+        default:                        /* OP_NOP, OP_END */
+            return 1;
+        }
+    }
+};
+
+}  // namespace
+
+std::vector<ModelOp> model_decode(const std::vector<uint8_t> &code)
+{
+    Decoder d = { code };
+    std::map<uint32_t, std::pair<ModelOp, uint32_t>> at;    /* pc -> instruction, length */
+    std::vector<uint32_t> work = { 0 };
+    while (!work.empty()) {
+        uint32_t pc = work.back();
+        work.pop_back();
+        if (at.count(pc))
+            continue;
+        ModelOp o;
+        bool falls;
+        uint32_t len = d.decode(pc, o, &falls);
+        if (pc + len >= 0x10000) {
+            fprintf(stderr, "car model: instruction at %u runs past 64 KB, not drawn\n", pc);
+            return {};
+        }
+        if (falls)
+            work.push_back(pc + len);
+        if (o.op == OP_SORT2)
+            work.push_back(o.target[1]);
+        if (o.op == OP_SORT2 || o.op == OP_JUMP || o.op == OP_CALL || o.op == OP_JUMP_VISIBLE || o.op == OP_JUMP_HIDDEN)
+            work.push_back(o.target[0]);
+        at.emplace(pc, std::make_pair(std::move(o), len));
+    }
+
+    std::map<uint32_t, uint32_t> index;     /* pc -> index in the list */
+    uint32_t end = 0;
+    for (const auto &e : at) {
+        if (e.first < end) {
+            fprintf(stderr, "car model: a jump lands at %u, inside another instruction; not drawn\n", e.first);
+            return {};
+        }
+        index[e.first] = (uint32_t)index.size();
+        end = e.first + e.second.second;
+    }
+    std::vector<ModelOp> ops;
+    for (auto &e : at) {
+        ModelOp &o = e.second.first;
+        o.target[0] = index[o.target[0]];
+        o.target[1] = index[o.target[1]];
+        ops.push_back(std::move(o));
+    }
+    return ops;
+}
+
+/* ------------------------------------------------------------------------
+ * Running the decoded model
+ * ---------------------------------------------------------------------- */
+
 static const ProjVertex &point(uint16_t i) { return *reinterpret_cast<const ProjVertex *>(ds_ptr((uint16_t)(offsetof(DataSeg, car_proj) + i * sizeof(ProjVertex)))); }
 
-/* Reads the outline of an n-sided polygon (n points + the closing one).
- * Returns the number of points that survived the near plane. */
-uint16_t Program::read_outline(uint16_t &pc, uint8_t n, Op kind, uint16_t base) const
+static uint16_t ds_word(uint16_t ofs) { return (uint16_t)(*ds_ptr(ofs) | *ds_ptr((uint16_t)(ofs + 1)) << 8); }
+
+/* Feeds the outline of a polygon to the clipper.  Returns the number of
+ * points that survived the near plane. */
+static uint16_t draw_outline(const ModelOp &o)
 {
+    const size_t n = o.outline.size() - 1;
     uint16_t count = 0;
-    for (int i = 0; i <= n; i++) {
-        const ProjVertex &p = point(rd16(pc));
-        uint32_t attr;
-        pc += 2;
-        switch (kind) {
-        case OP_FLAT:       attr = 0; break;
-        case OP_SHADED:     attr = rd16(pc); pc += 2; break;
-        case OP_SHADED_TAB: attr = (uint16_t)(rd16((uint16_t)(offsetof(DataSeg, car_uv_table) + rd16(pc))) + base); pc += 2; break;
-        default:            attr = rd32(pc); pc += 4; break;
-        }
+    for (size_t i = 0; i <= n; i++) {
+        const ProjVertex &p = point(o.outline[i].point);
+        uint32_t attr = o.outline[i].attr;
+        if (o.op == OP_FLAT)
+            attr = 0;
+        else if (o.op == OP_SHADED_TAB)
+            /* in the data segment, like the original (its program counter
+             * was a data segment offset); this port used to read the model
+             * at that offset instead */
+            attr = (uint16_t)(ds_word((uint16_t)(offsetof(DataSeg, car_uv_table) + attr)) + o.word);
         if (i == 0)
             poly_begin(p, attr);
         else if (i < n)
@@ -113,9 +272,9 @@ static bool outline_visible(uint16_t count)
 /* Wheel sprite (OP_WHEEL).  The angle between the line of sight and the
  * axle p->q picks one of nine views; the sprite is rotated to the axle's
  * direction on screen. */
-void Program::draw_wheel(uint16_t ops) const
+static void draw_wheel(const ModelOp &o)
 {
-    const ProjVertex &a = point(rd16(ops)), &b = point(rd16((uint16_t)(ops + 2)));
+    const ProjVertex &a = point(o.p[0]), &b = point(o.p[1]);
 
     int16_t axle = (int16_t)vec3_length((int16_t)(a.x - b.x), (int16_t)(a.y - b.y), (int16_t)(a.z - b.z));
     int32_t sight = vec3_length(a.x, a.y, a.z);
@@ -132,147 +291,136 @@ void Program::draw_wheel(uint16_t ops) const
             break;
         }
     }
-    uint16_t sp = (uint16_t)(ops + 6 + view * 20);
-    int16_t w0 = (int16_t)rd16(sp), w1 = (int16_t)rd16((uint16_t)(sp + 2));
+    const ModelOp::WheelView &w = o.views[view];
 
     Angle angle = fx_atan2((int16_t)(b.sx - a.sx), (int16_t)(b.sy - a.sy));
     Q15 s = fx_sin(angle), c = fx_cos(angle);
     int16_t depth = a.y;
     auto size = [&](int16_t w, Q15 t) { return screen_clamp(w * t * render_scale / depth); };
-    int16_t c0 = size(w0, c), s0 = size(w0, s);
-    int16_t c1 = size(w1, c), s1 = size(w1, s);
+    int16_t c0 = size(w.w0, c), s0 = size(w.w0, s);
+    int16_t c1 = size(w.w1, c), s1 = size(w.w1, s);
 
-    PolyVertex *o = G->poly_buf[0].v;
+    PolyVertex *out = G->poly_buf[0].v;
     int16_t X = a.sx, Y = a.sy;
-    o[0].sx = (int16_t)(X - c0 - s1); o[0].sy = (int16_t)(Y + s0 - c1);
-    o[1].sx = (int16_t)(X - c0 + s1); o[1].sy = (int16_t)(Y + s0 + c1);
-    o[2].sx = (int16_t)(X + c0 + s1); o[2].sy = (int16_t)(Y - s0 + c1);
-    o[3].sx = (int16_t)(X + c0 - s1); o[3].sy = (int16_t)(Y - s0 - c1);
+    out[0].sx = (int16_t)(X - c0 - s1); out[0].sy = (int16_t)(Y + s0 - c1);
+    out[1].sx = (int16_t)(X - c0 + s1); out[1].sy = (int16_t)(Y + s0 + c1);
+    out[2].sx = (int16_t)(X + c0 + s1); out[2].sy = (int16_t)(Y - s0 + c1);
+    out[3].sx = (int16_t)(X + c0 - s1); out[3].sy = (int16_t)(Y - s0 - c1);
     for (int i = 0; i < 4; i++) {
-        uint32_t uv = rd32((uint16_t)(sp + 4 + 4 * i));
-        o[i].a = (uint16_t)uv;
-        o[i].b = (uint16_t)(uv >> 16);
+        out[i].a = (uint16_t)w.uv[i];
+        out[i].b = (uint16_t)(w.uv[i] >> 16);
     }
     G->poly_buf[0].count = 4;
     draw_textured();
 }
 
-SpriteQuad Program::read_sprite(uint16_t pc) const
-{
-    SpriteQuad q;
-    q.size = (int16_t)rd16(pc);
-    for (int i = 0; i < 4; i++)
-        q.uv[i] = rd32((uint16_t)(pc + 2 + 4 * i));
-    return q;
-}
+namespace {
+
+/* A decoded model being run. */
+class Program {
+public:
+    explicit Program(const std::vector<ModelOp> &ops) : ops(ops) {}
+    void run(uint32_t i);           /* from instruction i to its OP_END */
+
+private:
+    const std::vector<ModelOp> &ops;
+};
 
 /* orig 1000:1408 */
-void Program::run(uint16_t pc) const
+void Program::run(uint32_t i)
 {
     for (;;) {
-        Op op = (Op)(rd8(pc++) & 0x1f);
-        switch (op) {
-        case OP_PIXEL: {
-            const ProjVertex &p = point(rd16(pc));
-            uint8_t color = (uint8_t)rd16((uint16_t)(pc + 2));
-            pc += 4;
+        const ModelOp &o = ops[i++];
+        switch (o.op) {
+        case OP_PIXEL: {                /* FUN_1000_1408.LAB_LOC_6 */
+            const ProjVertex &p = point(o.p[0]);
             if (p.y >= G->near_clip)
-                put_block(p.sx, p.sy, color);
+                put_block(p.sx, p.sy, (uint8_t)o.word);
             break;
         }
-        case OP_NEARER:
-            poly_hidden = (int16_t)(point(rd16(pc)).y - point(rd16((uint16_t)(pc + 2))).y) < 0;
-            pc += 6;
+        case OP_NEARER:                 /* FUN_1000_1408.LAB_LOC_7 */
+            poly_hidden = (int16_t)(point(o.p[0]).y - point(o.p[1]).y) < 0;
             break;
-        case OP_FACING: {
-            const ProjVertex &p = point(rd16(pc));
+        case OP_FACING: {               /* FUN_1000_1408.LAB_LOC_8 */
+            const ProjVertex &p = point(o.p[0]);
             poly_begin(p, 0);
-            poly_add(point(rd16((uint16_t)(pc + 2))), 0);
-            poly_add(point(rd16((uint16_t)(pc + 4))), 0);
+            poly_add(point(o.p[1]), 0);
+            poly_add(point(o.p[2]), 0);
             poly_end(p, 0);
-            pc += 6;
             poly_hidden = poly_backfacing();    /* even if nothing is left */
             break;
         }
-        case OP_FLAT: {
-            uint8_t n = rd8(pc++);
-            uint16_t count = read_outline(pc, n, OP_FLAT, 0);
-            G->poly_color = rd16(pc);
-            pc += 2;
+        case OP_FLAT: {                 /* FUN_1000_1408.LAB_LOC_9 */
+            uint16_t count = draw_outline(o);
+            G->poly_color = o.word;
             if (outline_visible(count))
                 draw_flat();
             break;
         }
-        case OP_NOP:
+        case OP_NOP:                    /* FUN_1000_1408.LAB_LOC_11 */
             break;
-        case OP_SHADED: {
-            uint8_t n = rd8(pc++);
-            if (outline_visible(read_outline(pc, n, OP_SHADED, 0)))
+        case OP_SHADED:                 /* FUN_1000_1408.LAB_LOC_12 */
+            if (outline_visible(draw_outline(o)))
                 draw_shaded();
             break;
-        }
-        case OP_SHADED_TAB: {
-            uint8_t n = rd8(pc++);
-            G->poly_color = rd16(pc);
-            pc += 2;
-            if (outline_visible(read_outline(pc, n, OP_SHADED_TAB, G->poly_color)))
+        case OP_SHADED_TAB:             /* FUN_1000_1408.LAB_LOC_14 */
+            G->poly_color = o.word;
+            if (outline_visible(draw_outline(o)))
                 draw_shaded();
             break;
-        }
-        case OP_TEXTURED: {
-            uint8_t n = rd8(pc++);
-            if (outline_visible(read_outline(pc, n, OP_TEXTURED, 0)))
+        case OP_TEXTURED:               /* FUN_1000_1408.LAB_LOC_16 */
+            if (outline_visible(draw_outline(o)))
                 draw_textured();
             break;
-        }
-        case OP_SPRITE: {
-            const ProjVertex &p = point(rd16(pc));
-            pc += 2;
+        case OP_SPRITE: {               /* FUN_1000_1408.LAB_LOC_18 */
+            const ProjVertex &p = point(o.p[0]);
             if (p.y >= G->near_clip)
-                draw_sprite(p.sx, p.sy, p.y, read_sprite(pc));
-            pc += 18;
+                draw_sprite(p.sx, p.sy, p.y, o.sprite);
             break;
         }
-        case OP_WHEEL:
-            if (point(rd16(pc)).y >= G->near_clip)
-                draw_wheel(pc);
-            pc += 0xba;
+        case OP_WHEEL:                  /* FUN_1000_1408.LAB_LOC_20 */
+            if (point(o.p[0]).y >= G->near_clip)
+                draw_wheel(o);
             break;
-        case OP_SORT2: {
-            uint16_t a = (uint16_t)(pc + rd16(pc)), b = (uint16_t)(pc + rd16((uint16_t)(pc + 2)));
+        case OP_SORT2:                  /* FUN_1000_1408.LAB_LOC_24 */
             if (!poly_hidden) {
-                run(a);
-                run(b);
-            } else {
-                run(b);
-                run(a);
+                run(o.target[0]);
+                run(o.target[1]);
+            } else {                    /* FUN_1000_1408.LAB_LOC_25 */
+                run(o.target[1]);
+                run(o.target[0]);
             }
-            pc += 4;
             break;
-        }
-        case OP_JUMP:
-            pc = (uint16_t)(pc + 2 + rd16(pc));
+        case OP_JUMP:                   /* FUN_1000_1408.LAB_LOC_2 */
+            i = o.target[0];
             break;
-        case OP_CALL:
-            run((uint16_t)(pc + 2 + rd16(pc)));
-            pc += 2;
+        case OP_CALL:                   /* FUN_1000_1408.LAB_LOC_3 */
+            run(o.target[0]);
             break;
-        case OP_JUMP_VISIBLE:
-            pc = (uint16_t)(pc + 2 + (poly_hidden ? 0 : rd16(pc)));
+        case OP_JUMP_VISIBLE:           /* FUN_1000_1408.LAB_LOC_4 */
+            if (!poly_hidden)
+                i = o.target[0];
             break;
-        case OP_JUMP_HIDDEN:
-            pc = (uint16_t)(pc + 2 + (poly_hidden ? rd16(pc) : 0));
+        case OP_JUMP_HIDDEN:            /* FUN_1000_1408.LAB_LOC_5 */
+            if (poly_hidden)
+                i = o.target[0];
             break;
-        default:                        /* 0, 11..15 (21..31 crash the original) */
+        default:                        /* OP_END, also 11..15: FUN_1000_1408.LAB_LOC_1;
+                                         * 21..31: FUN_1000_1408.LAB_RUIM (UD2, a crash) */
             return;
         }
     }
 }
+
+}  // namespace
 
 /* orig 1000:1323 */
 void draw_car(Car &car)
 {
     raster_texture = seg_ptr(car.texture_seg ? car.texture_seg : G->seg_textures);
     transform_car(car);
-    car.model.run(0);
+    if (!car.model_ops.empty()) {
+        Program program(car.model_ops);
+        program.run(0);
+    }
 }

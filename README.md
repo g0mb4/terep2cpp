@@ -115,8 +115,9 @@ no exceptions, no inheritance):
   value where the original does arithmetic on it (shifts, 32-bit products).
 - **Methods on the car.** `Car` is the `carN.dat` header with `vertices()`, `springs()` and the
   physics as methods (`car.update_springs()`, `car.jump(...)`); `CarSpring::type()/softness()`,
-  `CarVertex::is_wheel()`, `Particle::ICE_CHIP` etc. The car's model is a `Program` (its bytes
-  plus the interpreter as methods: `car.model.run(0)`).
+  `CarVertex::is_wheel()`, `Particle::ICE_CHIP` etc. The car's model (a small bytecode program)
+  is decoded at load time into a list of typed instructions, `ModelOp`, with jump and call
+  targets as indices; `draw_car` runs it with a local `Program`.
 - **References, `bool`, `enum`, lambdas** instead of output pointers, int flags, `#define`s and
   local macros; no `goto`.
 - `#pragma once` in every header; the data segment structs are trivially copyable, with no
@@ -145,8 +146,9 @@ texture) and the host.
 The original copies the whole `carN.dat` into the segment and uses the file as the car structure
 itself: the header holds the state (steering, throttle, wheels...), the points and springs are
 read by offset and the model is a program whose counter is an offset in the segment. Here
-`car_read` (`src/car_file.cpp`) parses the file into a `Car` with `std::vector`s of points,
-springs and the model program (the counter is now an index into that vector). `car_write` goes
+`car_read` (`src/car_file.cpp`) parses the file into a `Car` with `std::vector`s of points and
+springs, the model's bytes and the model decoded (`model_decode`: one `ModelOp` per instruction,
+the program counter becomes an index into that list). `car_write` goes
 the other way, and `cars_to_dataseg` builds a copy of the segment with the cars where the original
 would have them; the test host computes the CRC over that copy, so the comparison with the
 original is still byte for byte. The title bug was fixed in `Car::jump`.
@@ -184,7 +186,9 @@ Results:
   Before the fix it matched the asm in the whole data segment.
 
 `make test` repeats the scenario and random script 1 and compares them with the recorded
-references.
+references. It also runs the scenario with car 1 given a synthetic model that uses every opcode
+of the bytecode (`tools/synth_model.py`, built from the track's own car file, so it is not stored
+in the repository); the demo's cars only use six of them.
 
 ## Things found along the way
 

@@ -152,23 +152,28 @@ struct PACKED PcxHeader {
  * gives the original bytes back (the tests compare those).
  * ------------------------------------------------------------------------- */
 
-/* A car's model: a small drawing program, run by car_draw.cpp.  Reads past
- * its end give 0 (the original would read whatever follows the car in the
- * data segment). */
-struct Program {
-    enum Op : uint8_t;              /* the opcodes (car_draw.cpp) */
+enum ModelOpcode : uint8_t;         /* the opcodes (car_draw.cpp) */
 
-    std::vector<uint8_t> code;      /* pc 0 is its start */
+/* One instruction of a car's model, decoded at load time (model_decode in
+ * car_draw.cpp): operands typed, jump and call targets turned into indices
+ * in the list. */
+struct ModelOp {
+    struct Vertex {                 /* a polygon corner */
+        uint16_t point;             /* index into G->car_proj */
+        uint32_t attr;              /* shade, car_uv_table index or v << 16 | u */
+    };
+    struct WheelView {              /* one of the nine wheel sprites */
+        int16_t  w0, w1;            /* half-axes */
+        uint32_t uv[4];
+    };
 
-    void run(uint16_t pc) const;    /* draw with the points in G->car_proj */
-
-private:
-    uint8_t  rd8(uint16_t pc) const { return pc < code.size() ? code[pc] : 0; }
-    uint16_t rd16(uint16_t pc) const { return (uint16_t)(rd8(pc) | rd8((uint16_t)(pc + 1)) << 8); }
-    uint32_t rd32(uint16_t pc) const { return rd16(pc) | (uint32_t)rd16((uint16_t)(pc + 2)) << 16; }
-    uint16_t read_outline(uint16_t &pc, uint8_t n, Op kind, uint16_t base) const;
-    void draw_wheel(uint16_t ops) const;
-    SpriteQuad read_sprite(uint16_t pc) const;
+    ModelOpcode op;
+    uint16_t p[3] = {};             /* point operands */
+    uint16_t word = 0;              /* colour, or shade base for OP_SHADED_TAB */
+    uint32_t target[2] = {};        /* SORT2: a, b; JUMP*, CALL: target[0] */
+    std::vector<Vertex> outline;    /* n + 1 corners, the last one closes the polygon */
+    SpriteQuad sprite = {};
+    std::vector<WheelView> views;
 };
 
 struct CarVertex {                  /* a mass point of the soft body */
@@ -202,7 +207,8 @@ struct Car {
 
     std::vector<CarVertex> points;
     std::vector<CarSpring> spring_list;
-    Program                model;   /* the drawing program */
+    std::vector<uint8_t>   model;   /* the drawing program, as in the file */
+    std::vector<ModelOp>   model_ops;   /* the same, decoded (model_decode) */
 
     uint16_t drive = REAR;          /* Drive (from the file) */
     Angle    steer = {};            /* current steering angle, +-45 deg */
@@ -343,6 +349,7 @@ void     draw_terrain();
 void     draw_particles();
 
 /* car_draw.cpp */
+std::vector<ModelOp> model_decode(const std::vector<uint8_t> &code);
 void     draw_car(Car &car);
 
 /* camera.cpp */
