@@ -117,6 +117,11 @@ struct PACKED PointBuf {
     Point2   v[10];
 };
 
+struct PACKED SpriteQuad {          /* camera-facing textured square (smoke; model opcode 9) */
+    int16_t  size;                  /* half the side, before dividing by the depth */
+    uint32_t uv[4];                 /* corner texture coordinates, v << 16 | u */
+};
+
 struct PACKED PcxHeader {
     uint8_t  manufacturer, version, encoding, bits_per_pixel;
     uint16_t xmin, ymin, xmax, ymax;
@@ -315,6 +320,9 @@ void     draw_car(Car &car);
 
 /* camera.cpp */
 void     camera_update(int view);
+
+/* dataseg_init.cpp */
+void     dataseg_init();                /* fill *G with the original's initial contents */
 
 /* text.cpp */
 void     draw_text(const char *s, int16_t x, int16_t y, uint8_t color);

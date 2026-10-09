@@ -254,7 +254,9 @@ static bool scan_outline(int attrs)
 }
 
 /* Left end and width of a scanline; the tables may hold the ends in either
- * order. */
+ * order.  A few degenerate polygons give spans outside the clip rectangle:
+ * the original writes them anyway, wrapping around its 64 KB screen
+ * segment (see pixel_mask), higher scales cut them to the rectangle. */
 static uint32_t span_extent(int16_t y, int16_t *x0, int16_t *w)
 {
     int16_t l = span_x()[y].left;
@@ -263,10 +265,19 @@ static uint32_t span_extent(int16_t y, int16_t *x0, int16_t *w)
         l = (int16_t)(l + d);
         d = (int16_t)-d;
     }
+    if (render_scale > 1) {
+        int16_t r = (int16_t)(l + d);
+        if (l < G->clip_left) l = G->clip_left;
+        if (r > G->clip_right) r = G->clip_right;
+        d = (int16_t)(r < l ? -1 : r - l);
+    }
     *x0 = l;
     *w = (int16_t)(d + 1);
     return (uint32_t)(y * screen_w() + l);
 }
+
+/* Frame buffer offsets wrap at 64 KB at scale 1, like the original's. */
+static uint32_t pixel_mask() { return render_scale > 1 ? 0xffffffffu : 0xffffu; }
 
 /* ------------------------------------------------------------------------
  * Span fillers
@@ -284,6 +295,7 @@ void draw_flat()
     if (!rows)
         return;
     uint8_t *scr = screen();
+    const uint32_t m = pixel_mask();
     uint16_t color = G->poly_color;
     for (int16_t y = G->span_top; rows >= 0; rows--, y++) {
         int16_t x0, w;
@@ -291,10 +303,10 @@ void draw_flat()
         if (color >= 0xf0f0) {
             const uint8_t *shade = G->shade_table[(uint8_t)((color >> 8) - 0xf0)];
             for (uint16_t i = 0; i < (uint16_t)w; i++, o++)
-                scr[o] = shade[scr[o]];
+                scr[o & m] = shade[scr[o & m]];
         } else {
             for (uint16_t i = 0; i < (uint16_t)w; i++, o++)
-                scr[o] = (i & 1) ? (uint8_t)(color >> 8) : (uint8_t)color;
+                scr[o & m] = (i & 1) ? (uint8_t)(color >> 8) : (uint8_t)color;
         }
     }
 }
@@ -315,6 +327,7 @@ void draw_shaded()
     if (!rows)
         return;
     uint8_t *scr = screen();
+    const uint32_t m = pixel_mask();
     for (int16_t y = G->span_top; rows >= 0; rows--, y++) {
         int16_t a0 = span_a()[y].left;
         int16_t da = (int16_t)(span_a()[y].right - a0);
@@ -327,7 +340,7 @@ void draw_shaded()
         int32_t step = ((int32_t)da << 8) / (int32_t)(uint16_t)w;
         uint32_t a = (uint32_t)((int32_t)a0 << 8);
         for (uint16_t i = 0; i < (uint16_t)w; i++, o++) {
-            scr[o] = (uint8_t)(a >> 16);
+            scr[o & m] = (uint8_t)(a >> 16);
             a += (uint32_t)step;
         }
     }
@@ -350,6 +363,7 @@ void draw_textured()
     if (!rows)
         return;
     uint8_t *scr = screen();
+    const uint32_t m = pixel_mask();
     const uint8_t *tex = raster_texture;
     for (int16_t y = G->span_top; rows >= 0; rows--, y++) {
         int16_t u0 = span_a()[y].left, du = (int16_t)(span_a()[y].right - u0);
@@ -366,7 +380,7 @@ void draw_textured()
         for (uint16_t i = 0; i < (uint16_t)w; i++, o++) {
             uint8_t t = tex[(uint16_t)((u >> 16) + ((vv >> 16) << 8))];
             if (t != 0xff)
-                scr[o] = t >= 0xf0 ? G->shade_table[t - 0xf0][scr[o]] : t;
+                scr[o & m] = t >= 0xf0 ? G->shade_table[t - 0xf0][scr[o & m]] : t;
             u += (uint32_t)ustep;
             vv += (uint32_t)vstep;
         }

@@ -56,7 +56,8 @@
 0x2e51 uint8_t  shade_table[16][256]      ; [level][colour] -> colour (translucency)
 0x3e51 uint16_t particle_bytes            ; number of live particles * sizeof(Particle)
 0x3e53 Particle particles[200]
-0x5a53 uint16_t smoke_sprite[8]           ; DS offsets of the smoke quad corner tables
+0x5a53 uint16_t smoke_sprite[16]          ; DS offsets of the smoke quads, by particle kind >> 4
+0x5a73 SpriteQuad smoke_quad[4]
 0x5ac1 int16_t  tmp_tri[12]
 0x5ad9 uint8_t  car_keys[5][6]            ; accel, brake, left, right, handbrake, spare
 0x5af7 uint16_t car_dat_name[5]           ; DS offsets of "car1.dat".."car5.dat"
@@ -129,7 +130,8 @@
 0xec50 uint16_t unk_ec50
 0xecb8 uint8_t  sfx_engine_patch[0x21]
 0xecd9 uint8_t  sfx_hit_patch[0x3e]
-0xed17 uint16_t font_offset[128]          ; per character, relative to font_offset
+0xed17 uint16_t font_offset[128]          ; per character, relative to font_glyphs
+0xee17 uint8_t  font_glyphs[0x169]        ; columns of each glyph (bit 0 = top row), 0 ends a glyph
 0xef80 uint16_t pcx_width
 0xef82 uint16_t pcx_height
 0xef88 PcxHeader pcx_header

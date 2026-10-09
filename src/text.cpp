@@ -1,7 +1,7 @@
 /*
  * Bitmap font text.  Each glyph is a list of column bytes (bit 0 = top
- * row) ended by a zero byte; font_offset[c] locates glyph c relative to
- * font_offset + 0x100 (offsets in the data segment).
+ * row) ended by a zero byte; font_offset[c] locates glyph c in
+ * font_glyphs (offsets in the data segment, see dataseg_init.cpp).
  */
 #include "terep.hpp"
 
@@ -11,6 +11,7 @@
 void draw_text(const char *s, int16_t x, int16_t y, uint8_t color)
 {
     const uint16_t font = (uint16_t)offsetof(DataSeg, font_offset);
+    const uint16_t glyphs = (uint16_t)offsetof(DataSeg, font_glyphs);
     for (;;) {
         uint8_t ch = (uint8_t)*s++;
         if (ch == 0 || ch == 13)
@@ -29,11 +30,12 @@ void draw_text(const char *s, int16_t x, int16_t y, uint8_t color)
         }
         /* 16-bit offsets: characters >= 128 index past the table and
          * wrap around the data segment, as in the original.  Only the
-         * title can hold such characters (see car_jump); their "glyphs"
-         * may come from past the end of data.bin, which differs between
-         * builds (the Win16 port keeps its own variables there), so
-         * those few columns of the title are not reproduced exactly. */
-        uint16_t col = (uint16_t)(font + 0x100 + *(const uint16_t *)ds_ptr((uint16_t)(font + ch * 2)));
+         * title can hold such characters (see Car::jump); their "glyphs"
+         * may come from past the end of the original data segment
+         * image, which differs between builds (the Win16 port keeps its
+         * own variables there), so those few columns of the title are not
+         * reproduced exactly. */
+        uint16_t col = (uint16_t)(glyphs + *(const uint16_t *)ds_ptr((uint16_t)(font + ch * 2)));
         for (; *ds_ptr(col); col++, x++) {
             int16_t row = y;
             for (uint8_t bits = *ds_ptr(col); bits; bits >>= 1, row++)

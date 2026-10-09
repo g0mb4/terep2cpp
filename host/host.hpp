@@ -2,9 +2,9 @@
 #pragma once
 #include "../src/terep.hpp"
 
-// Load the initial data segment image (data/data.bin) and allocate the
-// segment pool.  Returns false (after printing why) on failure.
-bool host_load_dataseg(const char *path);
+// Allocate the data segment and fill it with its initial contents.
+// Returns false (after printing why) on failure.
+bool host_init_dataseg();
 
 // Run one display frame of the original timing: two physics ticks
 // (120 Hz) per rendered frame (60 Hz).  Returns true when Esc was handled.

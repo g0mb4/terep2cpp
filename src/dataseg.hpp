@@ -61,8 +61,9 @@ struct PACKED DataSeg {
     uint16_t particle_bytes;                 /* 3e51: number of live particles * sizeof(Particle) */
     Particle particles[200];                 /* 3e53 */
     uint8_t _pad_5433[0x620];
-    uint16_t smoke_sprite[8];                /* 5a53: DS offsets of the smoke quad corner tables */
-    uint8_t _pad_5a63[0x5e];
+    uint16_t smoke_sprite[16];               /* 5a53: DS offsets of the smoke quads, by particle kind >> 4 */
+    SpriteQuad smoke_quad[4];                /* 5a73 */
+    uint8_t _pad_5abb[0x6];
     int16_t tmp_tri[12];                     /* 5ac1 */
     uint8_t car_keys[5][6];                  /* 5ad9: accel, brake, left, right, handbrake, spare */
     uint16_t car_dat_name[5];                /* 5af7: DS offsets of "car1.dat".."car5.dat" */
@@ -140,8 +141,8 @@ struct PACKED DataSeg {
     uint8_t _pad_ec52[0x66];
     uint8_t sfx_engine_patch[33];            /* ecb8 */
     uint8_t sfx_hit_patch[62];               /* ecd9 */
-    uint16_t font_offset[128];               /* ed17: per character, relative to font_offset */
-    uint8_t _pad_ee17[0x169];
+    uint16_t font_offset[128];               /* ed17: per character, relative to font_glyphs */
+    uint8_t font_glyphs[361];                /* ee17: columns of each glyph (bit 0 = top row), 0 ends a glyph */
     uint16_t pcx_width;                      /* ef80 */
     uint16_t pcx_height;                     /* ef82 */
     uint8_t _pad_ef84[0x4];
@@ -205,6 +206,7 @@ static_assert(offsetof(DataSeg, shade_table) == 0x2e51, "shade_table");
 static_assert(offsetof(DataSeg, particle_bytes) == 0x3e51, "particle_bytes");
 static_assert(offsetof(DataSeg, particles) == 0x3e53, "particles");
 static_assert(offsetof(DataSeg, smoke_sprite) == 0x5a53, "smoke_sprite");
+static_assert(offsetof(DataSeg, smoke_quad) == 0x5a73, "smoke_quad");
 static_assert(offsetof(DataSeg, tmp_tri) == 0x5ac1, "tmp_tri");
 static_assert(offsetof(DataSeg, car_keys) == 0x5ad9, "car_keys");
 static_assert(offsetof(DataSeg, car_dat_name) == 0x5af7, "car_dat_name");
@@ -278,6 +280,7 @@ static_assert(offsetof(DataSeg, unk_ec50) == 0xec50, "unk_ec50");
 static_assert(offsetof(DataSeg, sfx_engine_patch) == 0xecb8, "sfx_engine_patch");
 static_assert(offsetof(DataSeg, sfx_hit_patch) == 0xecd9, "sfx_hit_patch");
 static_assert(offsetof(DataSeg, font_offset) == 0xed17, "font_offset");
+static_assert(offsetof(DataSeg, font_glyphs) == 0xee17, "font_glyphs");
 static_assert(offsetof(DataSeg, pcx_width) == 0xef80, "pcx_width");
 static_assert(offsetof(DataSeg, pcx_height) == 0xef82, "pcx_height");
 static_assert(offsetof(DataSeg, pcx_header) == 0xef88, "pcx_header");

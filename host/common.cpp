@@ -1,9 +1,8 @@
 /*
  * Memory and files for the standalone hosts.
  *
- * The data segment is a 64 KB block initialised from data.bin (the
- * original program's data segment as it is on disk: tables, font, names,
- * default settings).  "Segments" are 64 KB blocks too, so that 16-bit
+ * The data segment is a 64 KB block filled by dataseg_init (tables, font,
+ * names, default settings).  "Segments" are 64 KB blocks too, so that 16-bit
  * offsets into them can never leave them; handle 0 means "none".
  */
 #include <cstdlib>
@@ -32,20 +31,14 @@ int seg_alloc(uint16_t paragraphs, uint16_t *handle)
     return 0;
 }
 
-bool host_load_dataseg(const char *path)
+bool host_init_dataseg()
 {
     G = static_cast<DataSeg *>(calloc(1, 0x10000));
-    FILE *f = fopen(path, "rb");
-    if (!G || !f) {
-        perror(path);
+    if (!G) {
+        perror("data segment");
         return false;
     }
-    size_t n = fread(G, 1, 0x10000, f);
-    fclose(f);
-    if (n < offsetof(DataSeg, pcx_width)) {
-        fprintf(stderr, "%s: too short for a data segment image\n", path);
-        return false;
-    }
+    dataseg_init();
     return true;
 }
 

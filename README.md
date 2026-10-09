@@ -11,8 +11,8 @@ estado do jogo batem byte a byte com o asm original (veja [Verificação](#verif
 make            # terep2-headless: host de teste, sem dependências
 make sdl        # terep2: versão jogável com SDL2 (precisa de libsdl2-dev)
 make test       # roda os cenários gravados e compara com a referência
-./terep2        # usa data/data.bin e data/Asphalt
-./terep2 -d data/data.bin outra/pista
+./terep2        # usa data/Asphalt
+./terep2 outra/pista
 ./terep2 -s 4     # renderiza em 1280x800 (escala 1 a 8)
 ```
 
@@ -61,6 +61,7 @@ src/            o jogo (não depende de SO nem de biblioteca)
                 Particle, ChaseCam, ProjVertex, PcxHeader...) e protótipos
   fixed.hpp     ponto fixo: ângulos (0x10000 = 360°), seno/cosseno Q15, multiplicações
   dataseg.def   mapa do segmento de dados original, campo a campo (fonte da verdade)
+  dataseg_init.cpp  conteúdo inicial do segmento (tabelas, fonte, nomes, ajustes), no código
   dataseg.hpp   struct DataSeg gerada a partir do .def (tools/gen_dataseg.py)
   math.cpp      seno/cosseno por tabela, atan2, comprimento de vetor, matriz de rotação
   terrain.cpp   altura do terreno (2 triângulos por célula do heightmap)
@@ -75,10 +76,10 @@ src/            o jogo (não depende de SO nem de biblioteca)
   game.cpp      um quadro (telas, texto, teclas) e o teclado
 host/
   host.hpp      o que os hosts compartilham
-  common.cpp    segmentos de 64 KB, carga do data.bin, passo de tempo, abrir arquivos sem caixa
+  common.cpp    segmentos de 64 KB, criação do segmento de dados, passo de tempo, abrir arquivos sem caixa
   headless.cpp  host de teste: roda N quadros com teclas roteirizadas e imprime CRCs
   sdl_main.cpp  host SDL2
-data/           data.bin (segmento de dados do original) e a pista Asphalt
+data/           a pista Asphalt e o data.bin (segmento de dados do original, só para os oráculos)
 tests/          run_tests.sh, máscara do segmento de dados e referências (ref/*.txt = teclas, *.crc)
 tools/          oráculos usados na verificação (abaixo), gerador do dataseg.hpp, gerador de roteiros
 ```
@@ -117,6 +118,13 @@ global continua numa `struct DataSeg` com o layout original, mas todo campo tem 
 tabelas de nomes de arquivo. Variáveis de rascunho do asm viraram variáveis locais. O que fica
 fora do segmento: teclado (`keys`), segmentos de imagem (heightmap, mapa de cores, texturas,
 tela, textura de cada carro) e o host.
+
+O conteúdo inicial do segmento, que o original lia do `data.bin`, é escrito por
+`dataseg_init()` (`src/dataseg_init.cpp`): textos e nomes de arquivo como strings, a fonte
+desenhada em ASCII, as tabelas de superfície, teclas e casco como arrays, a tabela de seno
+calculada. A tabela de atan fica como constante porque não é um atan arredondado exato. Sobras
+do DOS que nada lê (mensagens do XMS, uma sequência de som antiga) continuam lá, para o segmento
+sair byte a byte igual ao original e os testes continuarem comparando com o asm.
 
 ## Verificação
 

@@ -4,7 +4,7 @@
  * of the data segment (scratch variables masked), in the same format as
  * tools/oracle so the outputs can be compared directly.
  *
- *   terep2-headless [-d data.bin] [-s scale] trackdir frames [script] [ppmdir]
+ *   terep2-headless [-s scale] trackdir frames [script] [ppmdir]
  *
  * script: comma separated frame:scancode pairs (scancode | 0x80 = release)
  * ppmdir: write each frame as fNNNN.ppm there (only frame n with DUMP_FRAME=n)
@@ -32,19 +32,16 @@ static void write_ppm(const char *path)
 
 int main(int argc, char **argv)
 {
-    const char *data = "data.bin";
     int a = 1;
     for (; a + 1 < argc && argv[a][0] == '-'; a += 2) {
         std::string_view opt = argv[a];
-        if (opt == "-d")
-            data = argv[a + 1];
-        else if (opt == "-s")
+        if (opt == "-s")
             render_scale = atoi(argv[a + 1]);
         else
             break;
     }
     if (argc - a < 2 || render_scale < 1 || render_scale > MAX_RENDER_SCALE) {
-        fprintf(stderr, "usage: %s [-d data.bin] [-s 1..%d] trackdir frames [script] [ppmdir]\n",
+        fprintf(stderr, "usage: %s [-s 1..%d] trackdir frames [script] [ppmdir]\n",
                 argv[0], MAX_RENDER_SCALE);
         return 2;
     }
@@ -56,7 +53,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (!host_load_dataseg(data))
+    if (!host_init_dataseg())
         return 1;
     if (chdir(track) != 0) {
         perror(track);
