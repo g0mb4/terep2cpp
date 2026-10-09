@@ -1,0 +1,124 @@
+/*
+ * One rendered frame and the keyboard.
+ */
+#include "terep.h"
+
+DataSeg *G;
+uint8_t keys[128];                  /* all released (0xff) once game_init ran */
+
+/* Line added by the Win16 port, drawn in a cycling colour. */
+static const char port_banner[] = "GAMBIARRA FOREVER!";
+static uint8_t banner_color;
+
+static void set_viewport(int16_t top, int16_t center_y, int16_t bottom)
+{
+    G->clip_left = 0;
+    G->screen_cx = 160;
+    G->clip_right = 319;
+    G->clip_top = top;
+    G->screen_cy = center_y;
+    G->clip_bottom = bottom;
+}
+
+static void draw_view(int view)
+{
+    camera_update(view);
+    uint16_t yaw = (uint16_t)G->eye_angles[2];
+    G->yaw_sin7 = (int16_t)(fx_sin(yaw) >> 7);
+    G->yaw_cos7 = (int16_t)(fx_cos(yaw) >> 7);
+    build_matrix(G->eye_angles, G->view_matrix);
+    transpose(G->view_matrix);
+    if (view == 0)
+        clear_screen();
+    draw_terrain();
+    draw_particles();
+    engine_sound(G->player_car[view], (uint8_t)view);
+}
+
+static int held(uint8_t scancode)
+{
+    return !(keys[scancode] & 0x80);
+}
+
+/* Render the view(s) and the text, then handle the keys.  Returns 1 when
+ * Esc was pressed.  orig FUN_main_render */
+int game_frame(void)
+{
+    if (!G->split_screen) {
+        set_viewport(0, 0x50, 0xc7);
+        draw_view(0);
+    } else {
+        set_viewport(0, 0x32, 0x62);
+        draw_view(0);
+        set_viewport(0x64, 0x96, 0xc7);
+        draw_view(1);
+    }
+
+    set_viewport(0, 0x50, 0xc7);
+    draw_text(G->title_text, 10, 10, 15);
+    draw_text(G->subtitle_text, 100, 190, 15);
+    draw_text(port_banner, 5, 190, (uint8_t)(banner_color >> 2));
+    banner_color++;
+
+    /* numeric keypad: chase camera height (+ -) and distance (/ *) */
+    if (held(78) && G->chase_height <= 1000)
+        G->chase_height += 20;
+    if (held(74) && G->chase_height >= 50)
+        G->chase_height -= 20;
+    if (held(53) && G->chase_distance <= 0x1000)
+        G->chase_distance += 40;
+    if (held(55) && G->chase_distance >= 0x100)
+        G->chase_distance -= 40;
+
+    switch (keys[0]) {                  /* last key pressed */
+    case 0x01:                          /* Esc */
+        return 1;
+    case 0x0f:                          /* Tab: next car for view 1 */
+        if (++G->player_car[0] >= (uint16_t)G->num_cars)
+            G->player_car[0] = 0;
+        break;
+    case 0x10:                          /* Q: next car for view 2 */
+        if (++G->player_car[1] >= (uint16_t)G->num_cars)
+            G->player_car[1] = 0;
+        break;
+    case 0x3b: case 0x3c: case 0x3d: case 0x3e: case 0x3f:     /* F1..F5 */
+        G->cam_mode[0] = (uint8_t)(keys[0] - 0x3b);
+        break;
+    case 0x40:                          /* F6: cycle view 2's camera */
+        if (++G->cam_mode[1] >= 5)
+            G->cam_mode[1] = 0;
+        break;
+    case 0x1a:                          /* [ */
+        G->gravity += 50;
+        break;
+    case 0x1b:                          /* ] */
+        G->gravity -= 50;
+        break;
+    case 0x44:                          /* F10: fog distance */
+        G->fog_start ^= 0x600;
+        break;
+    case 0x43:                          /* F9: split screen */
+        G->split_screen ^= 1;
+        break;
+    default:
+        return 0;
+    }
+    keys[0] = 0;
+    return 0;
+}
+
+/* Keyboard scancode (bit 7 = release).  keys[sc] has bit 7 clear while
+ * the key is down; keys[0] remembers the last key pressed.
+ * orig FUN_keyboard_56df (the DOS version's INT 9 handler) */
+void game_key(uint8_t scancode)
+{
+    uint8_t sc = scancode & 0x7f;
+    if (scancode & 0x80) {
+        keys[sc] = 0xff;
+        keys[0] = 0;
+    } else {
+        keys[sc] &= 0x7f;
+        keys[0] = sc;
+    }
+}
+

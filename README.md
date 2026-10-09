@@ -1,0 +1,132 @@
+# terep2 em C
+
+Reescrita em C legível do **Terep2** (Nagymáthé Dénes, 1996–97, "-DEFORMERS- Atomic Vehicle
+Simulation System"), feita a partir do disassembly em `terep2isolado/reasm/maincode.asm` e da
+versão Win16. O comportamento é idêntico ao do original quadro a quadro: o framebuffer e o
+estado do jogo batem byte a byte com o asm original (veja [Verificação](#verificação)).
+
+## Compilar e rodar
+
+```sh
+make            # terep2-headless: host de teste, sem dependências
+make sdl        # terep2: versão jogável com SDL2 (precisa de libsdl2-dev)
+make test       # roda os cenários gravados e compara com a referência
+./terep2        # usa data/data.bin e data/Asphalt
+./terep2 -d data/data.bin outra/pista
+```
+
+C11 com extensões GNU (`__attribute__((packed))` e `-fwrapv`), então compila com gcc ou clang. Testado em Linux x86-64 com os dois. O código não depende do tamanho de ponteiro, mas não testei em 32 bits. A física roda a 120 Hz e a tela a
+60 Hz, como no port Win16. A janela tem escala 3x. Esc sai.
+
+### Controles
+
+| Tecla | Ação |
+|---|---|
+| setas + 5 do teclado numérico | carro 1 (acelera, freia, esquerda, direita, freio de mão) |
+| W Z A D S | carro 2 |
+| I M J L K | carro 3 |
+| T V F H G | carro 4 |
+| 7 9 1 3 . (teclado numérico) | carro 5 |
+| 1 / 2 | "pulo" do carro da tela 1 / tela 2 |
+| F1–F5 | câmera: no carro, no carro suavizada, parada, perseguição, todos os carros |
+| F6 | troca a câmera da tela 2 |
+| F9 | tela dividida |
+| F10 | neblina perto/longe |
+| Tab / Q | troca o carro seguido pela tela 1 / tela 2 |
+| [ ] | aumenta / diminui a gravidade |
+| + − / * (numérico) | altura e distância da câmera de perseguição |
+
+## Estrutura
+
+```
+src/            o jogo (não depende de SO nem de biblioteca)
+  terep.h       tipos (Car, CarVertex, CarSpring, Particle, ProjVertex, PcxHeader...) e protótipos
+  fixed.h       ponto fixo: ângulos (0x10000 = 360°), seno/cosseno Q15, posições 16.16
+  dataseg.def   mapa do segmento de dados original, campo a campo (fonte da verdade)
+  dataseg.h     struct DataSeg gerada a partir do .def (tools/gen_dataseg.py)
+  math.c        seno/cosseno por tabela, atan2, comprimento de vetor, matriz de rotação
+  terrain.c     altura do terreno (2 triângulos por célula do heightmap)
+  physics.c     corpo mole: controles, rodas, molas, integração, colisão entre carros, partículas
+  camera.c      as 5 câmeras
+  raster.c      recorte de polígonos, plano próximo, preenchimento flat/Gouraud/texturizado
+  scene.c       área visível, terreno por algoritmo do pintor, sprites e partículas
+  car_draw.c    transformação dos vértices do carro e o interpretador do modelo (bytecode)
+  text.c        fonte bitmap
+  sound.c       registradores do AdLib (o host decide o que fazer com eles)
+  load.c        PCX, mapa, tabelas de neblina/translucidez, carros, game_init
+  game.c        um quadro (telas, texto, teclas) e o teclado
+host/
+  common.c      segmentos de 64 KB, carga do data.bin, passo de tempo, abrir arquivos sem caixa
+  headless.c    host de teste: roda N quadros com teclas roteirizadas e imprime CRCs
+  sdl_main.c    host SDL2
+data/           data.bin (segmento de dados do original) e a pista Asphalt
+tests/          run_tests.sh, máscara do segmento de dados e referências (ref/*.txt = teclas, *.crc)
+tools/          oráculos usados na verificação (abaixo), gerador do dataseg.h, gerador de roteiros
+```
+
+### Por que ainda existe um "segmento de dados"
+
+O original guarda tudo num segmento de 64 KB e o próprio formato dos arquivos depende disso: o
+`carN.dat` é copiado inteiro para dentro do segmento e é a estrutura do carro, com ponteiros
+internos como offsets de 16 bits; o modelo do carro é um programa cujo contador de programa é
+um offset no segmento; a tabela de offsets da fonte dá a volta em 16 bits. Por isso o estado
+global continua numa `struct DataSeg` com o layout original, mas todo campo tem nome e tipo
+(`G->gravity`, `G->chase_cam[1]`, `car->lowest_vertex`...). Os acessos por offset restantes
+(`ds_ptr`) ficam onde o original realmente aritmetiza endereços: bytecode do carro, fonte e as
+tabelas de nomes de arquivo. Variáveis de rascunho do asm viraram variáveis locais. O que fica
+fora do segmento: teclado (`keys`), segmentos de imagem (heightmap, mapa de cores, texturas,
+tela, textura de cada carro) e o host.
+
+## Verificação
+
+Dois oráculos, os dois em `tools/`:
+
+- **asm original** (`tools/asm_oracle`): o próprio `maincode.asm` montado com nasm e executado
+  num emulador x86 16 bits (unicorn), com os serviços DOS emulados. É a verdade de referência.
+  `sh tools/asm_oracle/build.sh ../terep2isolado saida/` e depois `python3 saida/run.py`.
+- **previous_effort** (`tools/oracle`): a tradução C++ mecânica, com um host Linux. É ~1000x
+  mais rápida que o emulador e permite trocar subsistemas pelo código novo
+  (`--new physics,render,init`), o que serviu para reescrever uma parte de cada vez.
+  `bash tools/build_oracle.sh build/`.
+
+Todos imprimem, por quadro, o CRC32 do framebuffer e do segmento de dados (com
+`tests/dsmask.h` mascarando só lixo de registradores que o original deixa em variáveis de
+rascunho). Resultados:
+
+- cenário de 600 quadros que passa por todas as teclas (`tools/cenario.py`): C = C++ = asm;
+- 12 roteiros aleatórios de 3000 quadros (`tools/fuzz_script.py`): C = C++ em todos;
+- roteiros aleatórios 4 e 7 (3000 quadros cada) contra o asm: segmento de dados idêntico em
+  todos os quadros, e tela idêntica fora da linha do título. No roteiro 4 o título se
+  corrompe (explicado abaixo) e algumas colunas dele saem diferentes.
+
+`make test` repete o cenário e o roteiro aleatório 1 e compara com as referências gravadas.
+
+## Coisas que descobri no caminho
+
+Bugs e esquisitices do original que foram **mantidos** (estão comentados no código):
+
+- **Pulo**: a busca do vértice mais baixo usa AX, que é a metade baixa do impulso, então a
+  parte baixa do impulso acaba sendo a altura do último vértice (`physics.c`, `car_jump`).
+- **Título que se corrompe**: segurar 1/2 enquanto troca de carro (Tab/Q) empurra o
+  `lowest_vertex` de um carro que nunca pulou, que vale 0. O impulso é somado no offset
+  0x14 do segmento, que é o "H" de "VEHICLE" no título, e a letra vira lixo.
+  Para letras ≥ 128 a tabela da fonte é lida fora do lugar. Às vezes isso pega bytes depois
+  do fim do `data.bin`, onde o port Win16 guarda as próprias variáveis. Nesse caso o desenho
+  dessas poucas colunas do título depende do build e é a única diferença conhecida em relação
+  ao asm.
+- Recorte de polígonos: as bordas esquerda/superior pulam a interseção quando o vértice
+  anterior está sobre a borda; direita/inferior não. A interpolação de textura no recorte
+  usa metade da precisão.
+- A projeção dos pontos cortados pelo plano próximo usa o centro fixo (160,100), mesmo com a
+  tela dividida.
+- `find_ref_vertex` pega o número de iterações da parte fracionária do x do primeiro vértice.
+- O cabeçalho PCX quase não é validado; um sexto carro leria o nome depois do fim da tabela.
+
+Diferença entre o port Win16 e o `previous_effort`: o comprimento da mola (`sqrt`) é
+arredondado (CVTSS2SI) no binário, e o C++ truncava. Por isso o C++ divergia do original
+depois de algumas centenas de quadros; o oráculo em `tools/oracle` já vem corrigido.
+
+## O que não foi feito
+
+- Não há build Win16/DOS; o alvo é C portável. O som é só a sequência de escritas no OPL2
+  (`opl_write_hook`); o host SDL ainda não toca nada.

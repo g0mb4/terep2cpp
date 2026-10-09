@@ -1,0 +1,26 @@
+# Build outputs
+/terep2
+/terep2-headless
+*.o
+/build/
+
+# Oracle outputs (tools/build_oracle.sh, tools/asm_oracle/build.sh)
+tools/asm_oracle/out/
+main.bin
+main.map
+maincode_int.asm
+
+
+# Frame dumps and scratch output
+*.ppm
+*.crc.new
+/*.tar.gz
+
+# Original game data (data.bin and the Asphalt track) belong to the demo's
+/data/data.bin
+/data/Asphalt/
+
+# TODO ver quais desses vai e nao vai pro repo
+/tools
+/tests
+/docs/*.png
