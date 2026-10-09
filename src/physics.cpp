@@ -641,7 +641,12 @@ void Car::jump(bool keep_point)
     uint16_t n = vertex_count();
     int32_t kick = (int32_t)((n >> 1) + 1) * G->gravity;
 
-    if (!keep_point) {
+    /* The original had a bug here, fixed in this version: a car that was
+     * never kicked has lowest_vertex = 0, a data segment offset, so a key
+     * still held after switching to it (Tab/Q) added the kick to the
+     * "vel.z" at DS 0x14..0x17, which is the "VEHICLE" in the title text.
+     * Such a car now looks for its lowest point as on a fresh press. */
+    if (!keep_point || lowest < 0) {
         int low = 0;
         int16_t low_z = v->pos.z.units_signed();       /* compared signed, as the original */
         for (uint16_t i = 1; i < n; i++) {
@@ -655,19 +660,7 @@ void Car::jump(bool keep_point)
          * kick, so the low word ends up as the last vertex's height */
         kick = (int32_t)(((uint32_t)kick & 0xffff0000u) | v[n - 1].pos.z.units());
     }
-    if (lowest >= 0) {
-        v[lowest].vel.z += kick;
-    } else {
-        /* bug kept: in the original a car that was never kicked has
-         * lowest_vertex = 0, a data segment offset, so a key still held
-         * after switching to it adds to the "vel.z" at DS 0x14..0x17,
-         * which is the "VEHICLE" in the title text */
-        const uint16_t vel_z = 0x14;    /* offset of vel.z in a vertex of the file */
-        int32_t t;
-        memcpy(&t, ds_ptr(vel_z), 4);
-        t += kick;
-        memcpy(ds_ptr(vel_z), &t, 4);
-    }
+    v[lowest].vel.z += kick;
 }
 
 static void jump_keys()

@@ -3,7 +3,8 @@
 Reescrita em C++ legível (estilo "C com classes") do **Terep2** (Nagymáthé Dénes, 1996–97, "-DEFORMERS- Atomic Vehicle
 Simulation System"), feita a partir do disassembly em `terep2isolado/reasm/maincode.asm` e da
 versão Win16. O comportamento é idêntico ao do original quadro a quadro: o framebuffer e o
-estado do jogo batem byte a byte com o asm original (veja [Verificação](#verificação)).
+estado do jogo batem byte a byte com o asm original (veja [Verificação](#verificação)). A
+exceção é um bug corrigido de propósito (o do pulo que corrompe o título).
 
 ## Compilar e rodar
 
@@ -119,7 +120,7 @@ structs normais.
 ### Por que ainda existe um "segmento de dados"
 
 O original guarda tudo num segmento de 64 KB: a tabela de offsets da fonte dá a volta em 16
-bits, os nomes dos arquivos são achados por offset e o bug do pulo escreve no título. Por isso o
+bits, os nomes dos arquivos são achados por offset e o bug do pulo escrevia no título. Por isso o
 estado global continua numa `struct DataSeg` com o layout original, mas todo campo tem nome e
 tipo (`G->gravity`, `G->chase_cam[1]`...). Os acessos por offset restantes (`ds_ptr`) ficam onde
 o original realmente aritmetiza endereços: fonte, tabelas de nomes de arquivo, quads da fumaça.
@@ -136,7 +137,7 @@ molas são lidos por offset e o modelo é um programa cujo contador é um offset
 molas e o programa do modelo (o contador agora é um índice nesse vetor). `car_write` faz o
 caminho inverso, e `cars_to_dataseg` monta uma cópia do segmento com os carros onde o original os
 teria; o host de teste calcula o CRC sobre essa cópia, então a comparação com o original
-continua byte a byte. O bug do título é reproduzido de propósito em `Car::jump`.
+continua byte a byte. O bug do título foi corrigido em `Car::jump`.
 
 O conteúdo inicial do segmento, que o original lia do `data.bin`, é escrito por `dataseg_init()`
 (`src/dataseg_init.cpp`): textos e nomes de arquivo como strings, a fonte lida de `src/font.pbm`
@@ -165,9 +166,9 @@ rascunho). Resultados:
   previous_effort = asm;
 - 12 roteiros aleatórios de 3000 quadros (`tools/fuzz_script.py`): novo = previous_effort em
   todos, com g++ e com clang++;
-- roteiros aleatórios 4 e 7 (3000 quadros cada) contra o asm: segmento de dados idêntico em
-  todos os quadros, e tela idêntica fora da linha do título. No roteiro 4 o título se
-  corrompe (explicado abaixo) e algumas colunas dele saem diferentes.
+- roteiros aleatórios 4 e 7 (3000 quadros cada) contra o asm: o 7 é idêntico. O 4 diverge a
+  partir do quadro 1591, onde o original cai no bug do título, que aqui foi corrigido
+  (explicado abaixo). Antes da correção ele batia com o asm em todo o segmento de dados.
 
 `make test` repete o cenário e o roteiro aleatório 1 e compara com as referências gravadas.
 
@@ -177,13 +178,6 @@ Bugs e esquisitices do original que foram **mantidos** (estão comentados no có
 
 - **Pulo**: a busca do vértice mais baixo usa AX, que é a metade baixa do impulso, então a
   parte baixa do impulso acaba sendo a altura do último vértice (`physics.cpp`, `Car::jump`).
-- **Título que se corrompe**: segurar 1/2 enquanto troca de carro (Tab/Q) empurra o
-  `lowest_vertex` de um carro que nunca pulou, que vale 0 (um offset no segmento). O impulso é somado no offset
-  0x14 do segmento, que é o "H" de "VEHICLE" no título, e a letra vira lixo.
-  Para letras ≥ 128 a tabela da fonte é lida fora do lugar. Às vezes isso pega bytes depois
-  do fim do `data.bin`, onde o port Win16 guarda as próprias variáveis. Nesse caso o desenho
-  dessas poucas colunas do título depende do build e é a única diferença conhecida em relação
-  ao asm.
 - Recorte de polígonos: as bordas esquerda/superior pulam a interseção quando o vértice
   anterior está sobre a borda; direita/inferior não. A interpolação de textura no recorte
   usa metade da precisão.
@@ -191,6 +185,15 @@ Bugs e esquisitices do original que foram **mantidos** (estão comentados no có
   tela dividida.
 - `find_ref_vertex` pega o número de iterações da parte fracionária do x do primeiro vértice.
 - O cabeçalho PCX quase não é validado; um sexto carro leria o nome depois do fim da tabela.
+
+Bug do original **corrigido**:
+
+- **Título que se corrompe**: segurar 1/2 enquanto troca de carro (Tab/Q) empurra o
+  `lowest_vertex` de um carro que nunca pulou, que vale 0 (um offset no segmento). O impulso é
+  somado no offset 0x14 do segmento, que é o "H" de "VEHICLE" no título, e a letra vira lixo.
+  Como as letras ≥ 128 leem a tabela da fonte fora do lugar, às vezes até depois do fim do
+  `data.bin`, o desenho do título corrompido nem era igual entre builds. Agora esse carro
+  procura o ponto mais baixo como num aperto novo, e o pulo funciona.
 
 Diferença entre o port Win16 e o `previous_effort`: o comprimento da mola (`sqrt`) é
 arredondado (CVTSS2SI) no binário, e o previous_effort truncava. Por isso ele divergia do original

@@ -12,8 +12,8 @@
       g++ e clang; CI no GitHub Actions.
 - [ ] Carregar outra pista sem fechar a aplicação (hoje o estado e os segmentos são montados
       uma vez só no `game_init`).
-- [ ] Talvez: opção para corrigir o bug do pulo que corrompe o título (modo fiel continua o
-      padrão). Os bugs do renderizador ficam como estão.
+- [x] Corrigir o bug do pulo que corrompe o título (o carro procura o ponto mais baixo como
+      num aperto novo). Os bugs do renderizador ficam como estão.
 
 Fora do escopo daqui: som (feito em outro branch, só adaptar), widescreen (só no renderizador
 novo).

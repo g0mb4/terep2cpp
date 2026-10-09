@@ -30,11 +30,9 @@ void draw_text(const char *s, int16_t x, int16_t y, uint8_t color)
         }
         /* 16-bit offsets: characters >= 128 index past the table and
          * wrap around the data segment, as in the original.  Only the
-         * title can hold such characters (see Car::jump); their "glyphs"
-         * may come from past the end of the original data segment
-         * image, which differs between builds (the Win16 port keeps its
-         * own variables there), so those few columns of the title are not
-         * reproduced exactly. */
+         * original's jump bug (fixed here, see Car::jump) could put such
+         * characters in the title; their "glyphs" came from wherever the
+         * offsets pointed, even past the end of the data segment image. */
         uint16_t col = (uint16_t)(glyphs + *(const uint16_t *)ds_ptr((uint16_t)(font + ch * 2)));
         for (; *ds_ptr(col); col++, x++) {
             int16_t row = y;
