@@ -2,16 +2,20 @@
  * SDL2 host: a window, the keyboard and the original timing (physics at
  * 120 Hz, display at 60 Hz, as in the Win16 port).
  *
- *   terep2 [-d data.bin] [trackdir]      (default: data/data.bin data/Asphalt)
+ *   terep2 [-d data.bin] [-s scale] [trackdir]   (default: data/data.bin data/Asphalt)
+ *
+ * scale: render at 320*scale x 200*scale (1 = the original picture).
  *
  * Esc quits.  The AdLib sound is not played.
  */
 #include <cstdlib>
+#include <string_view>
 #include <unistd.h>
+#include <vector>
 #include <SDL.h>
 #include "host.hpp"
 
-constexpr int SCALE = 3;
+constexpr int WINDOW_SCALE = 3;            // initial window size, in 320x200 units
 
 // SDL scancode -> PC keyboard scancode (set 1), what the game expects.
 static uint8_t pc_scancode(SDL_Scancode s)
@@ -67,12 +71,21 @@ int main(int argc, char **argv)
     const char *data = "data/data.bin";
     const char *track = "data/Asphalt";
     int a = 1;
-    if (a + 1 < argc && !strcmp(argv[a], "-d")) {
-        data = argv[a + 1];
-        a += 2;
+    for (; a + 1 < argc && argv[a][0] == '-'; a += 2) {
+        std::string_view opt = argv[a];
+        if (opt == "-d")
+            data = argv[a + 1];
+        else if (opt == "-s")
+            render_scale = atoi(argv[a + 1]);
+        else
+            break;
     }
     if (a < argc)
         track = argv[a];
+    if (render_scale < 1 || render_scale > MAX_RENDER_SCALE) {
+        fprintf(stderr, "scale must be 1..%d\n", MAX_RENDER_SCALE);
+        return 1;
+    }
 
     if (!host_load_dataseg(data))
         return 1;
@@ -90,15 +103,16 @@ int main(int argc, char **argv)
         return 1;
     }
     SDL_Window *win = SDL_CreateWindow("Terep2", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                       320 * SCALE, 200 * SCALE, SDL_WINDOW_RESIZABLE);
+                                       320 * WINDOW_SCALE, 200 * WINDOW_SCALE, SDL_WINDOW_RESIZABLE);
     SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_PRESENTVSYNC);
     if (!win || !ren) {
         fprintf(stderr, "SDL: %s\n", SDL_GetError());
         return 1;
     }
-    SDL_RenderSetLogicalSize(ren, 320, 200);
-    SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, 320, 200);
-    static uint8_t rgb[320 * 200 * 3];
+    const int w = screen_w(), h = screen_h();
+    SDL_RenderSetLogicalSize(ren, w, h);
+    SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, w, h);
+    std::vector<uint8_t> rgb((size_t)w * h * 3);
 
     const uint64_t freq = SDL_GetPerformanceFrequency();
     uint64_t next_tick = SDL_GetPerformanceCounter(), next_frame = next_tick;
@@ -129,9 +143,9 @@ int main(int argc, char **argv)
             if (game_frame())
                 running = false;
             const uint8_t *scr = screen();
-            for (int i = 0; i < 64000; i++)
+            for (int i = 0; i < w * h; i++)
                 memcpy(&rgb[i * 3], host_palette(scr[i]), 3);
-            SDL_UpdateTexture(tex, nullptr, rgb, 320 * 3);
+            SDL_UpdateTexture(tex, nullptr, rgb.data(), w * 3);
             SDL_RenderClear(ren);
             SDL_RenderCopy(ren, tex, nullptr, nullptr);
             SDL_RenderPresent(ren);

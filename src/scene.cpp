@@ -35,9 +35,37 @@ bool view_transform(int16_t x, int16_t y, int16_t z, ProjVertex *out)
     return true;
 }
 
+/* view_transform of a point given in 16.16 relative to the eye.  At scale
+ * 1 only the integer part is used, as in the original.  Higher scales
+ * keep camera space x, y, z (used for the near plane and the facing tests)
+ * the same but project from the full 16.16 position: whole map units
+ * would make everything jump by several pixels at a time. */
+bool view_transform_fine(Vec3 d, ProjVertex *out)
+{
+    if (!view_transform(fx_int(d.x), fx_int(d.y), fx_int(d.z), out))
+        return false;
+    if (render_scale == 1)
+        return true;
+    const int16_t *m = G->view_matrix;
+    auto row = [&](int c) {                                 /* 16.16 */
+        return ((int64_t)d.x * m[c] + (int64_t)d.y * m[3 + c] + (int64_t)d.z * m[6 + c]) >> 15;
+    };
+    int64_t x = row(0), depth = -row(1), z = row(2);
+    if (depth < 0x10000)
+        depth = 0x10000;
+    int64_t s = 256 * render_scale;
+    out->sx = screen_clamp((int32_t)((x * s + (x < 0 ? -depth : depth) / 2) / depth) + G->screen_cx);
+    out->sy = screen_clamp(G->screen_cy - (int32_t)((z * s + (z < 0 ? -depth : depth) / 2) / depth));
+    return true;
+}
+
 /* A point given in map units, relative to the eye. */
 static bool view_transform_units(uint16_t x, uint16_t y, uint16_t z, ProjVertex *out)
 {
+    if (render_scale > 1) {
+        Vec3 d = Pos{ Coord::from_units(x), Coord::from_units(y), Coord::from_units(z) } - G->eye;
+        return view_transform_fine(d, out);
+    }
     return view_transform((int16_t)(x - G->eye.x.units()), (int16_t)(y - G->eye.y.units()),
                           (int16_t)(z - G->eye.z.units()), out);
 }
@@ -387,7 +415,7 @@ void draw_terrain()
 void draw_sprite(int16_t sx, int16_t sy, int16_t depth, uint16_t sprite_ofs)
 {
     const uint8_t *sp = ds_ptr(sprite_ofs);
-    int16_t h = (int16_t)(*reinterpret_cast<const int16_t *>(sp) / depth);
+    int16_t h = screen_clamp(*reinterpret_cast<const int16_t *>(sp) * render_scale / depth);
     const uint32_t *uv = reinterpret_cast<const uint32_t *>(sp + 2);
     PolyVertex *o = G->poly_buf[0].v;
     static const int8_t corner[4][2] = { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } };
@@ -417,7 +445,9 @@ void draw_particles()
             continue;
 
         ProjVertex v;
-        if (!view_transform_units(p.pos.x.units(), p.pos.y.units(), p.pos.z.units(), &v))
+        bool in_front = render_scale > 1 ? view_transform_fine(p.pos - G->eye, &v)
+                      : view_transform_units(p.pos.x.units(), p.pos.y.units(), p.pos.z.units(), &v);
+        if (!in_front)
             continue;
         draw_sprite(v.sx, v.sy, v.y, G->smoke_sprite[(uint8_t)p.kind >> 4]);
     }

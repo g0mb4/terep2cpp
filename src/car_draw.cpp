@@ -14,8 +14,7 @@
 
 static void transform_point(Pos p, ProjVertex *out)
 {
-    Vec3 d = p - G->eye;
-    view_transform(fx_int(d.x), fx_int(d.y), fx_int(d.z), out);
+    view_transform_fine(p - G->eye, out);
 }
 
 /* Half of the front axle, turned by the steering angle (16.16, length
@@ -141,8 +140,9 @@ static void draw_wheel(uint16_t ops)
     uint16_t angle = fx_atan2((int16_t)(b.sx - a.sx), (int16_t)(b.sy - a.sy));
     int16_t s = fx_sin(angle), c = fx_cos(angle);
     int16_t depth = a.y;
-    int16_t c0 = (int16_t)(mul_q15(w0, c) / depth), s0 = (int16_t)(mul_q15(w0, s) / depth);
-    int16_t c1 = (int16_t)(mul_q15(w1, c) / depth), s1 = (int16_t)(mul_q15(w1, s) / depth);
+    auto size = [&](int16_t w, int16_t t) { return screen_clamp(mul_q15(w, t) * render_scale / depth); };
+    int16_t c0 = size(w0, c), s0 = size(w0, s);
+    int16_t c1 = size(w1, c), s1 = size(w1, s);
 
     PolyVertex *o = G->poly_buf[0].v;
     int16_t X = a.sx, Y = a.sy;
@@ -170,7 +170,7 @@ static void run_model(uint16_t pc)
             uint8_t color = (uint8_t)rd16((uint16_t)(pc + 2));
             pc += 4;
             if (p.y >= G->near_clip)
-                put_pixel(p.sx, p.sy, color);
+                put_block(p.sx, p.sy, color);
             break;
         }
         case OP_NEARER:

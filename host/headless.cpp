@@ -4,13 +4,14 @@
  * of the data segment (scratch variables masked), in the same format as
  * tools/oracle so the outputs can be compared directly.
  *
- *   terep2-headless [-d data.bin] trackdir frames [script] [ppmdir]
+ *   terep2-headless [-d data.bin] [-s scale] trackdir frames [script] [ppmdir]
  *
  * script: comma separated frame:scancode pairs (scancode | 0x80 = release)
  * ppmdir: write each frame as fNNNN.ppm there (only frame n with DUMP_FRAME=n)
  */
 #include <climits>
 #include <cstdlib>
+#include <string_view>
 #include <unistd.h>
 #include "host.hpp"
 #include "../tests/dsmask.h"
@@ -22,9 +23,9 @@ static void write_ppm(const char *path)
         perror(path);
         return;
     }
-    fprintf(f, "P6 320 200 255\n");
+    fprintf(f, "P6 %d %d 255\n", screen_w(), screen_h());
     const uint8_t *scr = screen();
-    for (int i = 0; i < 64000; i++)
+    for (int i = 0; i < screen_w() * screen_h(); i++)
         fwrite(host_palette(scr[i]), 1, 3, f);
     fclose(f);
 }
@@ -33,12 +34,18 @@ int main(int argc, char **argv)
 {
     const char *data = "data.bin";
     int a = 1;
-    if (a + 1 < argc && !strcmp(argv[a], "-d")) {
-        data = argv[a + 1];
-        a += 2;
+    for (; a + 1 < argc && argv[a][0] == '-'; a += 2) {
+        std::string_view opt = argv[a];
+        if (opt == "-d")
+            data = argv[a + 1];
+        else if (opt == "-s")
+            render_scale = atoi(argv[a + 1]);
+        else
+            break;
     }
-    if (argc - a < 2) {
-        fprintf(stderr, "usage: %s [-d data.bin] trackdir frames [script] [ppmdir]\n", argv[0]);
+    if (argc - a < 2 || render_scale < 1 || render_scale > MAX_RENDER_SCALE) {
+        fprintf(stderr, "usage: %s [-d data.bin] [-s 1..%d] trackdir frames [script] [ppmdir]\n",
+                argv[0], MAX_RENDER_SCALE);
         return 2;
     }
     const char *track = argv[a], *script = argc - a > 2 ? argv[a + 2] : "";
@@ -75,7 +82,7 @@ int main(int argc, char **argv)
                 s++;
         }
         host_step();                    // Esc is ignored here
-        printf("%d %08lx %08lx\n", fr, crc32_buf(screen(), 64000), ds_masked_crc(reinterpret_cast<const uint8_t *>(G)));
+        printf("%d %08lx %08lx\n", fr, crc32_buf(screen(), (size_t)screen_w() * screen_h()), ds_masked_crc(reinterpret_cast<const uint8_t *>(G)));
         if (*ppmdir && (only < 0 || only == fr)) {
             char fn[PATH_MAX + 16];
             snprintf(fn, sizeof fn, "%s/f%04d.ppm", ppmdir, fr);

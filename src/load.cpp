@@ -5,6 +5,7 @@
  * File names are the ones stored in the data segment; the host opens them
  * (data_fopen, case-insensitive on systems that care).
  */
+#include <cstdlib>
 #include "terep.hpp"
 
 /* ------------------------------------------------------------------------
@@ -238,6 +239,11 @@ int game_init()
 
     if (seg_alloc(0xfa0, &G->seg_screen))
         return 1;
+    if (render_scale > 1) {
+        hires_screen = static_cast<uint8_t *>(calloc((size_t)screen_w(), (size_t)screen_h()));
+        if (!hires_screen)
+            return 1;
+    }
     sound_init();
     G->sim_running = 1;
     return 0;

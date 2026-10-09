@@ -38,7 +38,7 @@ void draw_text(const char *s, int16_t x, int16_t y, uint8_t color)
             int16_t row = y;
             for (uint8_t bits = *ds_ptr(col); bits; bits >>= 1, row++)
                 if (bits & 1)
-                    put_pixel(x, row, color);
+                    put_block((int16_t)(x * render_scale), (int16_t)(row * render_scale), color);
         }
         x++;                            /* one column of spacing */
     }

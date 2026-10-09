@@ -13,10 +13,27 @@ make sdl        # terep2: versão jogável com SDL2 (precisa de libsdl2-dev)
 make test       # roda os cenários gravados e compara com a referência
 ./terep2        # usa data/data.bin e data/Asphalt
 ./terep2 -d data/data.bin outra/pista
+./terep2 -s 4     # renderiza em 1280x800 (escala 1 a 8)
 ```
 
 C++17 com extensões GNU (`__attribute__((packed))` e `-fwrapv`), então compila com g++ ou clang++. Testado em Linux x86-64 com os dois. O código não depende do tamanho de ponteiro, mas não testei em 32 bits. A física roda a 120 Hz e a tela a
 60 Hz, como no port Win16. A janela tem escala 3x. Esc sai.
+
+### Resolução maior
+
+`-s N` (nos dois hosts) renderiza em 320·N x 200·N. A escala 1 é o original, byte a byte. Nas
+escalas maiores muda só o desenho; o estado do jogo é idêntico em qualquer escala:
+
+- a tela, os recortes e as tabelas de scanline crescem junto (`render_scale`, `screen_w()`,
+  `screen_h()`; o framebuffer grande fica fora do segmento de dados);
+- a projeção usa a posição 16.16 inteira, relativa ao olho, em vez das unidades inteiras do
+  original (`view_transform_fine` em `scene.cpp`). Com unidades inteiras um carro perto da
+  câmera pula vários pixels por vez, o que a 4x vira uma tremedeira bem visível. O espaço de
+  câmera em inteiros continua sendo usado no plano próximo e nos testes de face;
+- texto, sprites, rodas e os pixels do modelo do carro escalam pelo mesmo fator.
+
+O resto (textura afim, Gouraud, pontilhado) é o rasterizador original, só mais fino.
+[`docs/alta_resolucao.gif`](docs/alta_resolucao.gif) compara 1x ampliado e 4x.
 
 ### Controles
 

@@ -244,7 +244,26 @@ inline Car &car_get(int i) { return car_at(G->car_ofs[i]); }
  * like the original's 16-bit offsets. */
 inline uint8_t *heightmap() { return seg_ptr(G->seg_heightmap); }
 inline uint8_t *colormap()  { return seg_ptr(G->seg_colormap); }
-inline uint8_t *screen()    { return seg_ptr(G->seg_screen); }
+
+/* Resolution.  render_scale 1 is the original 320x200 in the original's
+ * screen segment, rendered exactly like the original.  Larger scales draw
+ * into hires_screen (320*s x 200*s) and project with the fractional bits
+ * of the positions, so the picture does not shake (see view_transform).
+ * The game state is the same at any scale. */
+constexpr int MAX_RENDER_SCALE = 8;
+extern int      render_scale;           /* set by the host before game_init */
+extern uint8_t *hires_screen;
+inline int      screen_w() { return 320 * render_scale; }
+inline int      screen_h() { return 200 * render_scale; }
+inline uint8_t *screen()   { return render_scale > 1 ? hires_screen : seg_ptr(G->seg_screen); }
+/* A scaled screen coordinate, kept where 16-bit differences of two of them
+ * cannot overflow (at scale 1 the original's 16-bit wraparound stays). */
+inline int16_t screen_clamp(int32_t v)
+{
+    if (render_scale == 1)
+        return (int16_t)v;
+    return (int16_t)(v < -16000 ? -16000 : v > 16000 ? 16000 : v);
+}
 
 /* ---------------------------------------------------------------------------
  * Modules
@@ -273,6 +292,7 @@ void     physics_tick();
 extern const uint8_t *raster_texture;   /* texture for draw_textured */
 void     clear_screen();
 void     put_pixel(int16_t x, int16_t y, uint8_t color);
+void     put_block(int16_t x, int16_t y, uint8_t color);    /* render_scale x render_scale pixels */
 int16_t  edge_lerp(int16_t da, int16_t va, int16_t db, int16_t vb);
 void     poly_begin(const ProjVertex &p, uint32_t attr);
 void     poly_add(const ProjVertex &p, uint32_t attr);
@@ -285,6 +305,7 @@ void     draw_textured();
 /* scene.cpp */
 extern bool poly_hidden;                /* result of the last facing test */
 bool     view_transform(int16_t x, int16_t y, int16_t z, ProjVertex *out);
+bool     view_transform_fine(Vec3 d, ProjVertex *out);  /* d: 16.16 map units from the eye */
 void     draw_sprite(int16_t sx, int16_t sy, int16_t depth, uint16_t sprite_ofs);
 void     draw_terrain();
 void     draw_particles();

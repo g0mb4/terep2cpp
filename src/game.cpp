@@ -10,14 +10,16 @@ uint8_t keys[128];                  /* all released (0xff) once game_init ran */
 static const char port_banner[] = "GAMBIARRA FOREVER!";
 static uint8_t banner_color;
 
+/* In the original's 320x200 coordinates, scaled to the screen. */
 static void set_viewport(int16_t top, int16_t center_y, int16_t bottom)
 {
+    int16_t s = (int16_t)render_scale;
     G->clip_left = 0;
-    G->screen_cx = 160;
-    G->clip_right = 319;
-    G->clip_top = top;
-    G->screen_cy = center_y;
-    G->clip_bottom = bottom;
+    G->screen_cx = (int16_t)(160 * s);
+    G->clip_right = (int16_t)(320 * s - 1);
+    G->clip_top = (int16_t)(top * s);
+    G->screen_cy = (int16_t)(center_y * s);
+    G->clip_bottom = (int16_t)((bottom + 1) * s - 1);
 }
 
 static void draw_view(int view)
