@@ -16,6 +16,15 @@
 #include "host.hpp"
 #include "../tests/dsmask.h"
 
+/* The data segment as the original has it: with the cars in car_pool. */
+static const uint8_t *dataseg_image()
+{
+    static uint8_t image[0x10000];
+    memcpy(image, G, sizeof image);
+    cars_to_dataseg(image);
+    return image;
+}
+
 static void write_ppm(const char *path)
 {
     FILE *f = fopen(path, "wb");
@@ -79,7 +88,7 @@ int main(int argc, char **argv)
                 s++;
         }
         host_step();                    // Esc is ignored here
-        printf("%d %08lx %08lx\n", fr, crc32_buf(screen(), (size_t)screen_w() * screen_h()), ds_masked_crc(reinterpret_cast<const uint8_t *>(G)));
+        printf("%d %08lx %08lx\n", fr, crc32_buf(screen(), (size_t)screen_w() * screen_h()), ds_masked_crc(dataseg_image()));
         if (*ppmdir && (only < 0 || only == fr)) {
             char fn[PATH_MAX + 16];
             snprintf(fn, sizeof fn, "%s/f%04d.ppm", ppmdir, fr);

@@ -4,11 +4,12 @@
  * C++ reconstruction of the MS-DOS demo, from the disassembly in reasm/.
  * Original function addresses are kept in comments ("orig 1000:xxxx").
  *
- * Style: plain C++ ("C with classes").  Every structure here is a packed
- * POD with exactly the original layout, because the data segment, the car
- * files and the car models are byte images addressed by 16-bit offsets.
- * Methods and operators are used where they make the arithmetic readable;
- * everything else stays as free functions.
+ * Style: plain C++ ("C with classes").  The structures that live in the
+ * data segment are packed PODs with exactly the original layout, because
+ * the segment is a byte image addressed by 16-bit offsets; the cars are
+ * ordinary structures read from their files.  Methods and operators are
+ * used where they make the arithmetic readable; everything else stays as
+ * free functions.
  */
 #pragma once
 
@@ -16,6 +17,7 @@
 #include <cstring>
 #include <cstdio>
 #include <cstddef>
+#include <vector>
 #include "fixed.hpp"
 
 #define PACKED __attribute__((packed))
@@ -25,7 +27,7 @@
  * ------------------------------------------------------------------------- */
 
 /* 16.16 signed vector: velocity, direction, force. */
-struct PACKED Vec3 {
+struct Vec3 {
     int32_t x, y, z;
 
     Vec3 &operator+=(Vec3 o) { x += o.x; y += o.y; z += o.z; return *this; }
@@ -43,7 +45,7 @@ inline int16_t fx_int(int32_t v) { return (int16_t)(v >> 16); }
  * rest the position inside it).  Most of the code works in "map units" of
  * 1/256 cell (heights, radii, camera distances), where the same bits read
  * as 16.16. */
-struct PACKED Coord {
+struct Coord {
     uint32_t raw;
 
     uint16_t units() const { return (uint16_t)(raw >> 16); }
@@ -60,7 +62,7 @@ struct PACKED Coord {
     static Coord from_units(uint16_t u) { return { (uint32_t)u << 16 }; }
 };
 
-struct PACKED Pos {
+struct Pos {
     Coord x, y, z;
 
     Pos &operator+=(Vec3 v) { x += v.x; y += v.y; z += v.z; return *this; }
@@ -139,12 +141,14 @@ struct PACKED PcxHeader {
 /* ---------------------------------------------------------------------------
  * Cars
  *
- * A carN.dat file is loaded verbatim into the data segment and *is* the car:
- * a fixed header followed by three variable-length sections that the header
- * points to (offsets are relative to the start of the car).
+ * A carN.dat file is a fixed header followed by three sections: the mass
+ * points, the springs and the model (a small drawing program, see
+ * car_draw.cpp).  The original copied the file into the data segment and
+ * used it in place; here car_file.cpp reads it into a Car and car_write
+ * gives the original bytes back (the tests compare those).
  * ------------------------------------------------------------------------- */
 
-struct PACKED CarVertex {           /* a mass point of the soft body */
+struct CarVertex {                  /* a mass point of the soft body */
     Pos      pos;
     Vec3     vel;
     int16_t  radius;                /* collision radius against the ground */
@@ -153,7 +157,7 @@ struct PACKED CarVertex {           /* a mass point of the soft body */
     bool is_wheel() const { return wheel != 0 && wheel != 0xffff; }
 };
 
-struct PACKED CarSpring {
+struct CarSpring {
     enum : uint8_t {
         LIMITS = 0,                 /* rope: only acts outside [min_len, max_len] */
         ELASTIC = 1,                /* spring that bends permanently or breaks */
@@ -170,37 +174,33 @@ struct PACKED CarSpring {
     int softness() const { return (uint8_t)((flags >> 8) + 1) & 31; }
 };
 
-struct PACKED Car {
+struct Car {
     enum Drive : uint16_t { REAR = 0, FRONT = 1, ALL = 2 };
 
-    uint16_t vertices_ofs;          /* -> uint16 count + CarVertex[] */
-    uint16_t springs_ofs;           /* -> uint16 count + CarSpring[] */
-    uint16_t model_ofs;             /* -> display list (see car_draw.cpp) */
-    uint16_t unk_06;
-    uint16_t drive;                 /* Drive */
-    int16_t  steer;                 /* current steering, +-0x2000 */
-    int16_t  throttle;              /* +-0x2000 */
-    uint16_t handbrake;
-    int16_t  mid[3];                /* middle of the body (map units) */
-    int16_t  steer_used;            /* steering/throttle latched for this tick */
-    int16_t  throttle_used;
-    uint16_t cell;                  /* map cell the car is drawn with */
-    uint16_t unk_1c;
-    uint16_t texture_seg;           /* car skin (0 = use textures.pcx) */
-    uint16_t ref_vertex_ofs;        /* -> reference vertex (camera anchor) */
-    uint16_t lowest_vertex;         /* DS offset of the vertex pushed by the "jump" keys */
-    uint8_t  unk_24[0x1e];
-    int32_t  wheel_speed[4];        /* angular speed of each wheel */
-    int32_t  spin[12];              /* further per-wheel state, decays with the speeds */
-    uint16_t unk_82;
+    std::vector<CarVertex> points;
+    std::vector<CarSpring> spring_list;
+    std::vector<uint8_t>   model;   /* the drawing program; pc 0 is its start */
 
-    /* the sections of the car file */
-    uint8_t   *bytes() { return reinterpret_cast<uint8_t *>(this); }
-    uint16_t   vertex_count() { return *reinterpret_cast<uint16_t *>(bytes() + vertices_ofs); }
-    CarVertex *vertices() { return reinterpret_cast<CarVertex *>(bytes() + vertices_ofs + 2); }
-    uint16_t   spring_count() { return *reinterpret_cast<uint16_t *>(bytes() + springs_ofs); }
-    CarSpring *springs() { return reinterpret_cast<CarSpring *>(bytes() + springs_ofs + 2); }
-    CarVertex &ref_vertex() { return *reinterpret_cast<CarVertex *>(bytes() + ref_vertex_ofs); }
+    uint16_t drive = REAR;          /* Drive (from the file) */
+    int16_t  steer = 0;             /* current steering, +-0x2000 */
+    int16_t  throttle = 0;          /* +-0x2000 */
+    uint16_t handbrake = 0;
+    int16_t  mid[3] = {};           /* middle of the body (map units) */
+    int16_t  steer_used = 0;        /* steering/throttle latched for this tick */
+    int16_t  throttle_used = 0;
+    uint16_t cell = 0;              /* map cell the car is drawn with */
+    uint16_t texture_seg = 0;       /* car skin (0 = use textures.pcx) */
+    uint16_t ref_index = 0;         /* reference vertex (camera anchor) */
+    int      lowest = -1;           /* vertex pushed by the "jump" keys, -1 before the first push */
+    int32_t  wheel_speed[4] = {};   /* angular speed of each wheel */
+    int32_t  spin[12] = {};         /* further per-wheel state, decays with the speeds */
+    uint16_t unk_06 = 0;            /* header word of unknown use, kept for car_write */
+
+    CarVertex *vertices() { return points.data(); }
+    uint16_t   vertex_count() const { return (uint16_t)points.size(); }
+    CarSpring *springs() { return spring_list.data(); }
+    uint16_t   spring_count() const { return (uint16_t)spring_list.size(); }
+    CarVertex &ref_vertex() { return points[ref_index]; }
 
     /* physics.cpp */
     Vec3 axis_x();                  /* unit vector across the car */
@@ -221,11 +221,15 @@ private:
     void compute_steered_dir();
 };
 
-static_assert(sizeof(CarVertex) == 0x1c, "CarVertex");
-static_assert(sizeof(CarSpring) == 0x0e, "CarSpring");
+/* Layout of a car file (all offsets from the start of the file). */
+namespace carfile {
+constexpr size_t HEADER = 0x84;     /* the header; the game's own state lives in it */
+constexpr size_t VERTEX = 0x1c;     /* one CarVertex */
+constexpr size_t SPRING = 0x0e;     /* one CarSpring */
+constexpr size_t MAX_SIZE = 10000;  /* the original reads at most this much */
+}
+
 static_assert(sizeof(Particle) == 0x1c, "Particle");
-static_assert(offsetof(Car, wheel_speed) == 0x42, "Car.wheel_speed");
-static_assert(sizeof(Car) == 0x84, "Car header");
 
 /* ---------------------------------------------------------------------------
  * Global state
@@ -242,8 +246,8 @@ int      seg_alloc(uint16_t paragraphs, uint16_t *handle);
 inline uint8_t *ds_ptr(uint16_t ofs) { return reinterpret_cast<uint8_t *>(G) + ofs; }
 inline uint16_t ds_ofs(const void *p) { return (uint16_t)(static_cast<const uint8_t *>(p) - reinterpret_cast<const uint8_t *>(G)); }
 
-inline Car &car_at(uint16_t ofs) { return *reinterpret_cast<Car *>(ds_ptr(ofs)); }
-inline Car &car_get(int i) { return car_at(G->car_ofs[i]); }
+extern Car cars[10];                /* G->num_cars of them are loaded */
+inline Car &car_get(int i) { return cars[i]; }
 
 /* Map layers.  Indexing with a uint16_t (x | y << 8) wraps around exactly
  * like the original's 16-bit offsets. */
@@ -311,7 +315,7 @@ void     draw_textured();
 extern bool poly_hidden;                /* result of the last facing test */
 bool     view_transform(int16_t x, int16_t y, int16_t z, ProjVertex *out);
 bool     view_transform_fine(Vec3 d, ProjVertex *out);  /* d: 16.16 map units from the eye */
-void     draw_sprite(int16_t sx, int16_t sy, int16_t depth, uint16_t sprite_ofs);
+void     draw_sprite(int16_t sx, int16_t sy, int16_t depth, const SpriteQuad &q);
 void     draw_terrain();
 void     draw_particles();
 
@@ -326,6 +330,11 @@ void     dataseg_init();                /* fill *G with the original's initial c
 
 /* text.cpp */
 void     draw_text(const char *s, int16_t x, int16_t y, uint8_t color);
+
+/* car_file.cpp */
+uint16_t car_read(Car &car, FILE *f);
+std::vector<uint8_t> car_write(const Car &car, uint16_t ds_base);
+void     cars_to_dataseg(uint8_t *ds);  /* the cars as the original keeps them, for comparing */
 
 /* load.cpp */
 FILE    *data_fopen(const char *name);  /* provided by the host: open a track file for reading */

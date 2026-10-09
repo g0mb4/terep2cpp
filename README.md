@@ -72,6 +72,7 @@ src/            o jogo (não depende de SO nem de biblioteca)
   car_draw.cpp  transformação dos vértices do carro e o interpretador do modelo (bytecode)
   text.cpp      fonte bitmap
   sound.cpp     registradores do AdLib (o host decide o que fazer com eles)
+  car_file.cpp  formato do carN.dat: car_read, car_write
   load.cpp      PCX, mapa, tabelas de neblina/translucidez, carros, game_init
   game.cpp      um quadro (telas, texto, teclas) e o teclado
 host/
@@ -87,7 +88,7 @@ tools/          oráculos usados na verificação (abaixo), gerador do dataseg.h
 ### Estilo C++
 
 C++ só onde deixa o código mais claro; o resto continua no estilo clássico (funções livres,
-`printf`, `memcpy`; da biblioteca padrão só `std::swap`; sem exceções, sem herança):
+`printf`, `memcpy`; da biblioteca padrão só `std::swap` e `std::vector` (nos carros); sem exceções, sem herança):
 
 - **Tipos de valor para o ponto fixo.** `Vec3` (16.16 com sinal: velocidades, forças, normais)
   com `+ - += -= >>`; `Coord` (uma coordenada de posição, 8.24 em células sem sinal, com
@@ -99,25 +100,36 @@ C++ só onde deixa o código mais claro; o resto continua no estilo clássico (f
   `CarVertex::is_wheel()`, `Particle::ICE_CHIP` etc.
 - **Referências, `bool`, `enum`, lambdas** no lugar de ponteiros de saída, flags int, `#define`
   e macros locais; nada de `goto`.
-- `#pragma once` em todos os cabeçalhos; tudo é trivialmente copiável, sem construtores.
+- `#pragma once` em todos os cabeçalhos; as structs do segmento de dados são trivialmente
+  copiáveis, sem construtores.
 
-Uma regra que pesa: **todas as estruturas são `packed`** (o layout tem que bater com o segmento
-original) e o C++ não deixa ligar uma referência a um campo de struct packed (`int &x =
-car.speed` não compila). Nesses casos o código usa uma cópia e grava de volta, ou um ponteiro.
-Chamar método em campo packed funciona normalmente.
+Uma regra que pesa: **as estruturas que moram no segmento de dados são `packed`** (o layout tem
+que bater com o segmento original) e o C++ não deixa ligar uma referência a um campo de struct
+packed (`int &x = G->gravity` não compila). Nesses casos o código usa uma cópia e grava de volta,
+ou um ponteiro. Chamar método em campo packed funciona normalmente. Os carros (`Car`,
+`CarVertex`, `CarSpring`) e os tipos de valor (`Vec3`, `Coord`, `Pos`) são structs normais.
 
 ### Por que ainda existe um "segmento de dados"
 
-O original guarda tudo num segmento de 64 KB e o próprio formato dos arquivos depende disso: o
-`carN.dat` é copiado inteiro para dentro do segmento e é a estrutura do carro, com ponteiros
-internos como offsets de 16 bits; o modelo do carro é um programa cujo contador de programa é
-um offset no segmento; a tabela de offsets da fonte dá a volta em 16 bits. Por isso o estado
-global continua numa `struct DataSeg` com o layout original, mas todo campo tem nome e tipo
-(`G->gravity`, `G->chase_cam[1]`, `car.lowest_vertex`...). Os acessos por offset restantes
-(`ds_ptr`) ficam onde o original realmente aritmetiza endereços: bytecode do carro, fonte e as
-tabelas de nomes de arquivo. Variáveis de rascunho do asm viraram variáveis locais. O que fica
-fora do segmento: teclado (`keys`), segmentos de imagem (heightmap, mapa de cores, texturas,
-tela, textura de cada carro) e o host.
+O original guarda tudo num segmento de 64 KB: a tabela de offsets da fonte dá a volta em 16
+bits, os nomes dos arquivos são achados por offset e o bug do pulo escreve no título. Por isso o
+estado global continua numa `struct DataSeg` com o layout original, mas todo campo tem nome e
+tipo (`G->gravity`, `G->chase_cam[1]`...). Os acessos por offset restantes (`ds_ptr`) ficam onde
+o original realmente aritmetiza endereços: fonte, tabelas de nomes de arquivo, quads da fumaça.
+Variáveis de rascunho do asm viraram variáveis locais. O que fica fora do segmento: os carros,
+o teclado (`keys`), os segmentos de imagem (heightmap, mapa de cores, texturas, tela, textura de
+cada carro) e o host.
+
+### Carros
+
+O original copia o `carN.dat` inteiro para dentro do segmento e usa o arquivo como a própria
+estrutura do carro: o cabeçalho guarda o estado (direção, acelerador, rodas...), os pontos e as
+molas são lidos por offset e o modelo é um programa cujo contador é um offset no segmento. Aqui
+`car_read` (`src/car_file.cpp`) interpreta o arquivo para um `Car` com `std::vector` de pontos,
+molas e o programa do modelo (o contador agora é um índice nesse vetor). `car_write` faz o
+caminho inverso, e `cars_to_dataseg` monta uma cópia do segmento com os carros onde o original os
+teria; o host de teste calcula o CRC sobre essa cópia, então a comparação com o original
+continua byte a byte. O bug do título é reproduzido de propósito em `Car::jump`.
 
 O conteúdo inicial do segmento, que o original lia do `data.bin`, é escrito por
 `dataseg_init()` (`src/dataseg_init.cpp`): textos e nomes de arquivo como strings, a fonte
@@ -159,7 +171,7 @@ Bugs e esquisitices do original que foram **mantidos** (estão comentados no có
 - **Pulo**: a busca do vértice mais baixo usa AX, que é a metade baixa do impulso, então a
   parte baixa do impulso acaba sendo a altura do último vértice (`physics.cpp`, `Car::jump`).
 - **Título que se corrompe**: segurar 1/2 enquanto troca de carro (Tab/Q) empurra o
-  `lowest_vertex` de um carro que nunca pulou, que vale 0. O impulso é somado no offset
+  `lowest_vertex` de um carro que nunca pulou, que vale 0 (um offset no segmento). O impulso é somado no offset
   0x14 do segmento, que é o "H" de "VEHICLE" no título, e a letra vira lixo.
   Para letras ≥ 128 a tabela da fonte é lida fora do lugar. Às vezes isso pega bytes depois
   do fim do `data.bin`, onde o port Win16 guarda as próprias variáveis. Nesse caso o desenho

@@ -48,8 +48,8 @@ static void transform_car(Car &car)
 /* ------------------------------------------------------------------------
  * Model bytecode
  *
- * The program counter is a data-segment offset; all operands are 16-bit
- * little-endian unless noted.  Point operands index car_proj.  "hidden"
+ * The program counter is an offset in car.model (in the original, a data
+ * segment offset); all operands are 16-bit little-endian unless noted.  Point operands index car_proj.  "hidden"
  * is the result of the last facing test (shared with the terrain code).
  * Only the low 5 bits of an opcode count.
  * ---------------------------------------------------------------------- */
@@ -74,8 +74,13 @@ enum Op : uint8_t {
     OP_JUMP_HIDDEN = 20,    /* rel              jump if hidden */
 };
 
-static uint16_t rd16(uint16_t pc) { return *reinterpret_cast<const uint16_t *>(ds_ptr(pc)); }
-static uint32_t rd32(uint16_t pc) { return *reinterpret_cast<const uint32_t *>(ds_ptr(pc)); }
+/* The program being run.  Reads past its end give 0 (the original would
+ * read whatever follows the car in the data segment). */
+static const std::vector<uint8_t> *program;
+
+static uint8_t rd8(uint16_t pc) { return pc < program->size() ? (*program)[pc] : 0; }
+static uint16_t rd16(uint16_t pc) { return (uint16_t)(rd8(pc) | rd8((uint16_t)(pc + 1)) << 8); }
+static uint32_t rd32(uint16_t pc) { return rd16(pc) | (uint32_t)rd16((uint16_t)(pc + 2)) << 16; }
 static const ProjVertex &point(uint16_t i) { return *reinterpret_cast<const ProjVertex *>(ds_ptr((uint16_t)(offsetof(DataSeg, car_proj) + i * sizeof(ProjVertex)))); }
 
 /* Reads the outline of an n-sided polygon (n points + the closing one).
@@ -159,11 +164,20 @@ static void draw_wheel(uint16_t ops)
     draw_textured();
 }
 
+static SpriteQuad read_sprite(uint16_t pc)
+{
+    SpriteQuad q;
+    q.size = (int16_t)rd16(pc);
+    for (int i = 0; i < 4; i++)
+        q.uv[i] = rd32((uint16_t)(pc + 2 + 4 * i));
+    return q;
+}
+
 /* orig 1000:1408 */
 static void run_model(uint16_t pc)
 {
     for (;;) {
-        Op op = (Op)(*ds_ptr(pc++) & 0x1f);
+        Op op = (Op)(rd8(pc++) & 0x1f);
         switch (op) {
         case OP_PIXEL: {
             const ProjVertex &p = point(rd16(pc));
@@ -188,7 +202,7 @@ static void run_model(uint16_t pc)
             break;
         }
         case OP_FLAT: {
-            uint8_t n = *ds_ptr(pc++);
+            uint8_t n = rd8(pc++);
             uint16_t count = read_outline(pc, n, OP_FLAT, 0);
             G->poly_color = rd16(pc);
             pc += 2;
@@ -199,13 +213,13 @@ static void run_model(uint16_t pc)
         case OP_NOP:
             break;
         case OP_SHADED: {
-            uint8_t n = *ds_ptr(pc++);
+            uint8_t n = rd8(pc++);
             if (outline_visible(read_outline(pc, n, OP_SHADED, 0)))
                 draw_shaded();
             break;
         }
         case OP_SHADED_TAB: {
-            uint8_t n = *ds_ptr(pc++);
+            uint8_t n = rd8(pc++);
             G->poly_color = rd16(pc);
             pc += 2;
             if (outline_visible(read_outline(pc, n, OP_SHADED_TAB, G->poly_color)))
@@ -213,7 +227,7 @@ static void run_model(uint16_t pc)
             break;
         }
         case OP_TEXTURED: {
-            uint8_t n = *ds_ptr(pc++);
+            uint8_t n = rd8(pc++);
             if (outline_visible(read_outline(pc, n, OP_TEXTURED, 0)))
                 draw_textured();
             break;
@@ -222,7 +236,7 @@ static void run_model(uint16_t pc)
             const ProjVertex &p = point(rd16(pc));
             pc += 2;
             if (p.y >= G->near_clip)
-                draw_sprite(p.sx, p.sy, p.y, pc);
+                draw_sprite(p.sx, p.sy, p.y, read_sprite(pc));
             pc += 18;
             break;
         }
@@ -267,5 +281,6 @@ void draw_car(Car &car)
 {
     raster_texture = seg_ptr(car.texture_seg ? car.texture_seg : G->seg_textures);
     transform_car(car);
-    run_model((uint16_t)(ds_ofs(&car) + car.model_ofs));
+    program = &car.model;
+    run_model(0);
 }

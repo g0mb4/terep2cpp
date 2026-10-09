@@ -2,7 +2,7 @@
 
 - [x] Parar de carregar o `data.bin`: colocar as constantes direto no código e inicializar o
       resto dinamicamente.
-- [ ] Parar de carregar os `carN.dat` direto na memória: interpretar o arquivo original e
+- [x] Parar de carregar os `carN.dat` direto na memória: interpretar o arquivo original e
       carregar de forma inteligente, para que as structs não precisem mais ser `packed`.
 - [ ] Tipos `Angle` (0x10000 = 360°) e `Q15` (seno/cosseno, matrizes), como `Pos`/`Vec3`, no
       lugar de `uint16_t`/`int16_t` soltos (`build_matrix`, câmeras, rodas).

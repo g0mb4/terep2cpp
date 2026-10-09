@@ -67,7 +67,7 @@
 0x5b65 uint8_t  unk_5b65[0x55]
 0x5bba int16_t  num_cars
 0x5bbc uint16_t car_ofs[10]               ; DS offset of each loaded car (cars are stored back to back)
-0x5bd0 uint8_t  car_pool[0x7530]          ; the car files themselves, see Car in terep.hpp
+0x5bd0 uint8_t  car_pool[0x7530]          ; where the original kept the car files; empty here (see car_file.cpp)
 0xd100 int16_t  tmp_trig[6]
 0xd10c int16_t  sin_table[1025]           ; sin of 0..90 deg, Q15
 0xd90e uint16_t atan_table[257]           ; atan(i/256), binary degrees

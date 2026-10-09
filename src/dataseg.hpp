@@ -73,7 +73,7 @@ struct PACKED DataSeg {
     uint8_t unk_5b65[85];                    /* 5b65 */
     int16_t num_cars;                        /* 5bba */
     uint16_t car_ofs[10];                    /* 5bbc: DS offset of each loaded car (cars are stored back to back) */
-    uint8_t car_pool[30000];                 /* 5bd0: the car files themselves, see Car in terep.hpp */
+    uint8_t car_pool[30000];                 /* 5bd0: where the original kept the car files; empty here (see car_file.cpp) */
     int16_t tmp_trig[6];                     /* d100 */
     int16_t sin_table[1025];                 /* d10c: sin of 0..90 deg, Q15 */
     uint16_t atan_table[257];                /* d90e: atan(i/256), binary degrees */

@@ -65,16 +65,22 @@ static inline uint32_t rol32(uint32_t v, int n) { return (v << n) | (v >> (32 - 
 /* Wheel friction and engine torque.  orig 1000:1004 */
 void Car::update_wheels()
 {
-    int32_t *w = wheel_speed;           /* wheel_speed[4] + spin[12] */
+    int32_t *w = wheel_speed;
 
     steer_used = steer;
     throttle_used = throttle;
 
-    for (int i = 0; i < 16; i++)
-        w[i] -= w[i] >> 7;
-    if (handbrake & 1)
-        for (int i = 0; i < 16; i++)
-            w[i] -= w[i] >> 2;
+    /* the original runs over wheel_speed and spin as one array of 16 */
+    auto decay = [](int32_t *v, int n, int shift) {
+        for (int i = 0; i < n; i++)
+            v[i] -= v[i] >> shift;
+    };
+    decay(wheel_speed, 4, 7);
+    decay(spin, 12, 7);
+    if (handbrake & 1) {
+        decay(wheel_speed, 4, 2);
+        decay(spin, 12, 2);
+    }
 
     /* The torque is scaled with ROL rather than SHL, which for negative
      * values drags sign bits into the bottom; kept as is. */
@@ -263,12 +269,8 @@ static void update_spring(CarVertex &a, CarVertex &b, CarSpring &s)
 void Car::update_springs()
 {
     CarVertex *v = vertices();
-    CarSpring *s = springs();
-    uint16_t n = spring_count();
-    do {
-        update_spring(v[s->a], v[s->b], *s);
-        s++;
-    } while (--n);
+    for (CarSpring &s : spring_list)
+        update_spring(v[s.a], v[s.b], s);
 }
 
 /* ------------------------------------------------------------------------
@@ -640,23 +642,32 @@ void Car::jump(bool keep_point)
     int32_t kick = (int32_t)((n >> 1) + 1) * G->gravity;
 
     if (!keep_point) {
-        CarVertex *low = v;
+        int low = 0;
         int16_t low_z = v->pos.z.units_signed();       /* compared signed, as the original */
         for (uint16_t i = 1; i < n; i++) {
             if (v[i].pos.z.units_signed() < low_z) {
                 low_z = v[i].pos.z.units_signed();
-                low = &v[i];
+                low = i;
             }
         }
-        lowest_vertex = ds_ofs(low);
+        lowest = low;
         /* quirk: the original searches with AX, which is the low half of the
          * kick, so the low word ends up as the last vertex's height */
         kick = (int32_t)(((uint32_t)kick & 0xffff0000u) | v[n - 1].pos.z.units());
     }
-    /* bug kept: a car that was never kicked has lowest_vertex = 0, so a key
-     * still held after switching to it adds to DS 0x14..0x17, which is the
-     * "VEHICLE" in the title text */
-    reinterpret_cast<CarVertex *>(ds_ptr(lowest_vertex))->vel.z += kick;
+    if (lowest >= 0) {
+        v[lowest].vel.z += kick;
+    } else {
+        /* bug kept: in the original a car that was never kicked has
+         * lowest_vertex = 0, a data segment offset, so a key still held
+         * after switching to it adds to the "vel.z" at DS 0x14..0x17,
+         * which is the "VEHICLE" in the title text */
+        const uint16_t vel_z = 0x14;    /* offset of vel.z in a vertex of the file */
+        int32_t t;
+        memcpy(&t, ds_ptr(vel_z), 4);
+        t += kick;
+        memcpy(ds_ptr(vel_z), &t, 4);
+    }
 }
 
 static void jump_keys()

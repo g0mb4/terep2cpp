@@ -412,11 +412,10 @@ void draw_terrain()
 
 /* A camera-facing square of the given world size.  orig 1000:0cd3 and
  * model opcode 9 */
-void draw_sprite(int16_t sx, int16_t sy, int16_t depth, uint16_t sprite_ofs)
+void draw_sprite(int16_t sx, int16_t sy, int16_t depth, const SpriteQuad &q)
 {
-    const uint8_t *sp = ds_ptr(sprite_ofs);
-    int16_t h = screen_clamp(*reinterpret_cast<const int16_t *>(sp) * render_scale / depth);
-    const uint32_t *uv = reinterpret_cast<const uint32_t *>(sp + 2);
+    int16_t h = screen_clamp(q.size * render_scale / depth);
+    const uint32_t *uv = q.uv;
     PolyVertex *o = G->poly_buf[0].v;
     static const int8_t corner[4][2] = { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } };
     for (int i = 0; i < 4; i++) {
@@ -449,6 +448,7 @@ void draw_particles()
                       : view_transform_units(p.pos.x.units(), p.pos.y.units(), p.pos.z.units(), &v);
         if (!in_front)
             continue;
-        draw_sprite(v.sx, v.sy, v.y, G->smoke_sprite[(uint8_t)p.kind >> 4]);
+        const SpriteQuad &quad = *reinterpret_cast<const SpriteQuad *>(ds_ptr(G->smoke_sprite[(uint8_t)p.kind >> 4]));
+        draw_sprite(v.sx, v.sy, v.y, quad);
     }
 }

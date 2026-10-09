@@ -116,47 +116,41 @@ static void load_map()
  * Cars
  * ---------------------------------------------------------------------- */
 
-/* Load a car file at DS offset ofs and put it on the map at (x, y), 100
- * units above the ground.  Returns the file size, 0 if it is missing.
- * orig 1000:2454 */
-static uint16_t load_car(const char *name, uint16_t ofs, uint16_t x, uint16_t y)
+/* Load a car file and put it on the map at (x, y), 100 units above the
+ * ground.  Returns the file size, 0 if it is missing.  orig 1000:2454 */
+static uint16_t load_car(Car &car, const char *name, uint16_t x, uint16_t y)
 {
-    memset(ds_ptr(ofs), 0, 0x82);
     FILE *f = data_fopen(name);
     if (!f)
         return 0;
-    uint16_t size = (uint16_t)fread(ds_ptr(ofs), 1, 10000, f);
+    uint16_t size = car_read(car, f);
     fclose(f);
 
-    Car &car = car_at(ofs);
     int16_t z = (int16_t)(terrain_height(x, y) + 100);
     Vec3 offset = { (int32_t)Coord::from_units(x).raw, (int32_t)Coord::from_units(y).raw,
                     (int32_t)Coord::from_units((uint16_t)z).raw };
-    CarVertex *v = car.vertices();
-    for (uint16_t i = 0; i < car.vertex_count(); i++)
-        v[i].pos += offset;
+    for (CarVertex &v : car.points)
+        v.pos += offset;
     return size;
 }
 
 /* The reference vertex (camera anchor) is the one marked 0xffff, else the
- * first.  The original takes its loop count from the first vertex's x
- * fraction instead of the vertex count; it only matters when there is no
- * marked vertex.  orig 1000:2431 */
+ * first.  The original takes its loop count from the low word of the
+ * first vertex's x instead of the vertex count (0 counting as 65536), and
+ * would go on reading past the vertices; here the search stops at the
+ * last vertex.  orig 1000:2431 */
 static void find_ref_vertex(Car &car)
 {
-    uint16_t first = (uint16_t)(car.vertices_ofs + 2);
-    uint16_t base = ds_ofs(&car);
-    uint16_t at = (uint16_t)(base + first);
-    uint16_t count = *reinterpret_cast<uint16_t *>(ds_ptr(at));
-
-    car.ref_vertex_ofs = first;
-    do {
-        if (reinterpret_cast<CarVertex *>(ds_ptr(at))->wheel == 0xffff) {
-            car.ref_vertex_ofs = (uint16_t)(at - base);
+    uint32_t count = (uint16_t)car.points[0].pos.x.raw;
+    if (count == 0)
+        count = 0x10000;
+    car.ref_index = 0;
+    for (uint32_t i = 0; i < count && i < car.points.size(); i++) {
+        if (car.points[i].wheel == 0xffff) {
+            car.ref_index = (uint16_t)i;
             return;
         }
-        at = (uint16_t)(at + sizeof(CarVertex));
-    } while (--count);
+    }
 }
 
 /* The car's skin: a PCX of up to 256 pixels width in its own segment.
@@ -177,31 +171,34 @@ static void load_car_skin(Car &car, const char *name)
     fclose(f);
 }
 
-/* Cars are loaded back to back from car_pool until a carN.dat is missing,
- * lined up along y = 0x7a00 every 256 units of x.  The name tables hold 5
- * entries; a sixth car would take its name from the bytes after them. */
 /* A word of the data segment at a computed offset. */
 static uint16_t &ds_word(size_t ofs)
 {
     return *reinterpret_cast<uint16_t *>(ds_ptr((uint16_t)ofs));
 }
 
+/* Cars are loaded until a carN.dat is missing, lined up along y = 0x7a00
+ * every 256 units of x.  The name tables hold 5 entries; a sixth car would
+ * take its name from the bytes after them.  car_ofs still records where
+ * the original would have put each car in car_pool (back to back), which
+ * cars_to_dataseg uses. */
 static void load_cars()
 {
     G->num_cars = 0;
     G->car_ofs[0] = (uint16_t)offsetof(DataSeg, car_pool);
-    for (int i = 0;; i++) {
+    for (int i = 0; i < (int)(sizeof cars / sizeof cars[0]); i++) {
         /* read through ds_ptr: i can run past the 5-entry tables */
         const char *dat = (const char *)ds_ptr(ds_word(offsetof(DataSeg, car_dat_name) + 2 * i));
         const char *pcx = (const char *)ds_ptr(ds_word(offsetof(DataSeg, car_pcx_name) + 2 * i));
-        uint16_t size = load_car(dat, ds_word(offsetof(DataSeg, car_ofs) + 2 * i), (uint16_t)(0x8000 - i * 256), 0x7a00);
-        if (!size)
+        Car &car = cars[i];
+        uint16_t size = load_car(car, dat, (uint16_t)(0x8000 - i * 256), 0x7a00);
+        if (!size || car.points.empty())
             break;
-        Car &car = car_get(i);
         find_ref_vertex(car);
         load_car_skin(car, pcx);
         G->num_cars++;
-        ds_word(offsetof(DataSeg, car_ofs) + 2 * (i + 1)) = (uint16_t)(G->car_ofs[i] + size);
+        if (i + 1 < (int)(sizeof G->car_ofs / sizeof G->car_ofs[0]))
+            G->car_ofs[i + 1] = (uint16_t)(G->car_ofs[i] + size);
     }
 }
 
