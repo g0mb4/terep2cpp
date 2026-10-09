@@ -6,7 +6,7 @@ CXX      ?= c++
 CXXFLAGS ?= -O2 -g
 CXXFLAGS += -std=gnu++17 -fwrapv -Wall -Wno-address-of-packed-member -Wno-unused-result
 GAME     := $(wildcard src/*.cpp)
-HEADERS  := $(wildcard src/*.hpp) src/dataseg.hpp host/host.hpp
+HEADERS  := $(wildcard src/*.hpp) src/dataseg.hpp host/host.hpp src/font.pbm
 HOST     := host/common.cpp
 
 all: terep2-headless

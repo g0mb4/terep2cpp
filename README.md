@@ -16,7 +16,7 @@ make test       # roda os cenários gravados e compara com a referência
 ./terep2 -s 4     # renderiza em 1280x800 (escala 1 a 8)
 ```
 
-C++17 com extensões GNU (`__attribute__((packed))` e `-fwrapv`), então compila com g++ ou clang++. Testado em Linux x86-64 com os dois. O código não depende do tamanho de ponteiro, mas não testei em 32 bits. A física roda a 120 Hz e a tela a
+C++17 com extensões GNU (`__attribute__((packed))`, `-fwrapv` e `#embed`), então compila com g++ 15+ ou clang++ 19+. Testado em Linux x86-64 com os dois. O código não depende do tamanho de ponteiro, mas não testei em 32 bits. A física roda a 120 Hz e a tela a
 60 Hz, como no port Win16. A janela tem escala 3x. Esc sai.
 
 ### Resolução maior
@@ -62,6 +62,7 @@ src/            o jogo (não depende de SO nem de biblioteca)
   fixed.hpp     ponto fixo: ângulos (0x10000 = 360°), seno/cosseno Q15, multiplicações
   dataseg.def   mapa do segmento de dados original, campo a campo (fonte da verdade)
   dataseg_init.cpp  conteúdo inicial do segmento (tabelas, fonte, nomes, ajustes), no código
+  font.pbm      a fonte (PBM texto, glifos de 5x5 um embaixo do outro), embutida com #embed
   dataseg.hpp   struct DataSeg gerada a partir do .def (tools/gen_dataseg.py)
   math.cpp      seno/cosseno por tabela, atan2, comprimento de vetor, matriz de rotação
   terrain.cpp   altura do terreno (2 triângulos por célula do heightmap)
@@ -131,12 +132,12 @@ caminho inverso, e `cars_to_dataseg` monta uma cópia do segmento com os carros 
 teria; o host de teste calcula o CRC sobre essa cópia, então a comparação com o original
 continua byte a byte. O bug do título é reproduzido de propósito em `Car::jump`.
 
-O conteúdo inicial do segmento, que o original lia do `data.bin`, é escrito por
-`dataseg_init()` (`src/dataseg_init.cpp`): textos e nomes de arquivo como strings, a fonte
-desenhada em ASCII, as tabelas de superfície, teclas e casco como arrays, a tabela de seno
-calculada. A tabela de atan fica como constante porque não é um atan arredondado exato. Sobras
-do DOS que nada lê (mensagens do XMS, uma sequência de som antiga) continuam lá, para o segmento
-sair byte a byte igual ao original e os testes continuarem comparando com o asm.
+O conteúdo inicial do segmento, que o original lia do `data.bin`, é escrito por `dataseg_init()`
+(`src/dataseg_init.cpp`): textos e nomes de arquivo como strings, a fonte lida de `src/font.pbm`
+(embutido no executável com `#embed`), as tabelas de superfície, teclas e casco como arrays, a
+tabela de seno calculada. A tabela de atan fica como constante porque não é um atan arredondado
+exato. Sobras do DOS que nada lê (mensagens do XMS, uma sequência de som antiga) continuam lá,
+para o segmento sair byte a byte igual ao original e os testes continuarem comparando com o asm.
 
 ## Verificação
 
