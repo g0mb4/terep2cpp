@@ -20,7 +20,6 @@ maincode_int.asm
 /data/data.bin
 /data/Asphalt/
 
-# TODO ver quais desses vai e nao vai pro repo
-/tools
-/tests
+#TODO pegar esse oracle do outro repo
+/tools/oracle
 /docs/*.png
