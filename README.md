@@ -26,7 +26,9 @@ make test       # runs the recorded scenarios and compares them with the referen
 C++17 with GNU extensions (`__attribute__((packed))`, `-fwrapv` and `#embed`), so it builds with
 g++ 15+ or clang++ 19+. Tested on Linux x86-64 with both. The code does not depend on pointer
 size, but it has not been tested on 32 bits. Physics runs at 120 Hz and the display at 60 Hz, as
-in the Win16 port. The window is scaled 3x. Esc quits.
+in the Win16 port. The window opens at the size of the picture at the chosen scale (`-s`),
+enlarged to at least 960x600 and reduced by a whole factor if it does not fit on the screen.
+Esc quits.
 
 ### Higher resolution
 

@@ -15,7 +15,25 @@
 #include <SDL.h>
 #include "host.hpp"
 
-constexpr int WINDOW_SCALE = 3;            // initial window size, in 320x200 units
+constexpr int MIN_ZOOM = 3;                // a 320x200 picture opens at least this many times bigger
+
+// Initial window size: the picture at the chosen scale, enlarged by a whole
+// factor while it is smaller than 320x200 x MIN_ZOOM, then reduced by a
+// whole factor while it does not fit on the screen.
+static void window_size(int *w, int *h)
+{
+    int zoom = (MIN_ZOOM + render_scale - 1) / render_scale, div = 1;
+    SDL_Rect usable;
+    if (SDL_GetDisplayUsableBounds(0, &usable) == 0) {
+        auto fits = [&](int z, int d) { return screen_w() * z / d <= usable.w && screen_h() * z / d <= usable.h; };
+        while (zoom > 1 && !fits(zoom, 1))
+            zoom--;
+        while (!fits(zoom, div) && div < render_scale)
+            div++;
+    }
+    *w = screen_w() * zoom / div;
+    *h = screen_h() * zoom / div;
+}
 
 // SDL scancode -> PC keyboard scancode (set 1), what the game expects.
 static uint8_t pc_scancode(SDL_Scancode s)
@@ -99,8 +117,10 @@ int main(int argc, char **argv)
         fprintf(stderr, "SDL: %s\n", SDL_GetError());
         return 1;
     }
+    int win_w, win_h;
+    window_size(&win_w, &win_h);
     SDL_Window *win = SDL_CreateWindow("Terep2", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                       320 * WINDOW_SCALE, 200 * WINDOW_SCALE, SDL_WINDOW_RESIZABLE);
+                                       win_w, win_h, SDL_WINDOW_RESIZABLE);
     SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_PRESENTVSYNC);
     if (!win || !ren) {
         fprintf(stderr, "SDL: %s\n", SDL_GetError());
