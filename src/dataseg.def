@@ -13,7 +13,7 @@
 0x007e uint8_t  cam_mode[2]               ; per player view, 0..4 (F1..F5 / F6)
 0x0080 ChaseCam chase_cam[2]              ; free-floating camera state, one per player
 0x00a4 uint16_t player_car[2]             ; car index followed by each view (Tab / Q)
-0x00aa Vec3fx   eye                       ; camera position (16.16)
+0x00aa Vec3pos  eye                       ; camera position (16.16)
 0x00c2 int16_t  eye_angles[3]             ; roll, pitch, yaw of the camera
 0x00c8 int16_t  cars_center[3]            ; average car position (camera 5)
 0x00ce int16_t  view_matrix[9]            ; Q15 rotation, world -> camera
@@ -123,7 +123,7 @@
 0xea59 int32_t  surface_max_load[16]
 0xea99 uint16_t hull_plane_bytes
 0xea9b HullPlane hull_normal[16]
-0xeb5b HullPlane hull_point[16]
+0xeb5b Vec3pos  hull_point[16]
 0xec1b uint16_t hull_tri_count
 0xec1d uint16_t hull_tri[7][3]            ; car vertices forming the collision hull
 0xec50 uint16_t unk_ec50

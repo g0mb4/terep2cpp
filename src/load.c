@@ -118,7 +118,7 @@ static void load_map(void)
 /* Load a car file at DS offset ofs and put it on the map at (x, y), 100
  * units above the ground.  Returns the file size, 0 if it is missing.
  * orig 1000:2454 */
-static uint16_t load_car(const char *name, uint16_t ofs, int16_t x, int16_t y)
+static uint16_t load_car(const char *name, uint16_t ofs, uint16_t x, uint16_t y)
 {
     memset(ds_ptr(ofs), 0, 0x82);
     FILE *f = data_fopen(name);
@@ -128,12 +128,12 @@ static uint16_t load_car(const char *name, uint16_t ofs, int16_t x, int16_t y)
     fclose(f);
 
     Car *car = car_at(ofs);
-    int16_t z = (int16_t)(terrain_height((uint16_t)x, (uint16_t)y) + 100);
+    int16_t z = (int16_t)(terrain_height(x, y) + 100);
     CarVertex *v = car_vertices(car);
     for (uint16_t i = 0; i < car_vertex_count(car); i++) {
-        v[i].pos.x = (int32_t)((uint32_t)v[i].pos.x + ((uint32_t)(uint16_t)x << 16));
-        v[i].pos.y = (int32_t)((uint32_t)v[i].pos.y + ((uint32_t)(uint16_t)y << 16));
-        v[i].pos.z = (int32_t)((uint32_t)v[i].pos.z + ((uint32_t)(uint16_t)z << 16));
+        v[i].pos.x += (uint32_t)x << 16;
+        v[i].pos.y += (uint32_t)y << 16;
+        v[i].pos.z += (uint32_t)(uint16_t)z << 16;
     }
     return size;
 }
@@ -188,7 +188,7 @@ static void load_cars(void)
         /* read through ds_ptr: i can run past the 5-entry tables */
         const char *dat = (const char *)ds_ptr(*(uint16_t *)ds_ptr((uint16_t)(0x5af7 + 2 * i)));
         const char *pcx = (const char *)ds_ptr(*(uint16_t *)ds_ptr((uint16_t)(0x5b2e + 2 * i)));
-        uint16_t size = load_car(dat, *(uint16_t *)ds_ptr((uint16_t)(0x5bbc + 2 * i)), (int16_t)(0x8000 - i * 256), 0x7a00);
+        uint16_t size = load_car(dat, *(uint16_t *)ds_ptr((uint16_t)(0x5bbc + 2 * i)), (uint16_t)(0x8000 - i * 256), 0x7a00);
         if (!size)
             break;
         Car *car = car_get(i);

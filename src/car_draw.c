@@ -14,11 +14,11 @@
 
 void draw_sprite(int16_t sx, int16_t sy, int16_t depth, uint16_t sprite_ofs);
 
-static void transform_point(int32_t x, int32_t y, int32_t z, ProjVertex *out)
+static void transform_point(uint32_t x, uint32_t y, uint32_t z, ProjVertex *out)
 {
-    view_transform(fx_int((int32_t)((uint32_t)x - (uint32_t)G->eye.x)),
-                   fx_int((int32_t)((uint32_t)y - (uint32_t)G->eye.y)),
-                   fx_int((int32_t)((uint32_t)z - (uint32_t)G->eye.z)), out);
+    view_transform(fx_int(pos_delta(x, G->eye.x)),
+                   fx_int(pos_delta(y, G->eye.y)),
+                   fx_int(pos_delta(z, G->eye.z)), out);
 }
 
 /* Half of the front axle, turned by the steering angle (16.16, length
@@ -45,16 +45,12 @@ static void transform_car(Car *car)
 
     for (uint16_t i = 0; i < n; i++) {
         transform_point(v[i].pos.x, v[i].pos.y, v[i].pos.z, out++);
-        int16_t ground = terrain_height((uint16_t)fx_int(v[i].pos.x), (uint16_t)fx_int(v[i].pos.y));
-        transform_point(v[i].pos.x, v[i].pos.y, (int32_t)((uint32_t)(uint16_t)ground << 16), out++);
+        int16_t ground = terrain_height(map_int(v[i].pos.x), map_int(v[i].pos.y));
+        transform_point(v[i].pos.x, v[i].pos.y, (uint32_t)(uint16_t)ground << 16, out++);
     }
     Vec3fx a = steered_axle(car);
-    transform_point((int32_t)((uint32_t)v[0].pos.x + (uint32_t)a.x),
-                    (int32_t)((uint32_t)v[0].pos.y + (uint32_t)a.y),
-                    (int32_t)((uint32_t)v[0].pos.z + (uint32_t)a.z), out++);
-    transform_point((int32_t)((uint32_t)v[1].pos.x - (uint32_t)a.x),
-                    (int32_t)((uint32_t)v[1].pos.y - (uint32_t)a.y),
-                    (int32_t)((uint32_t)v[1].pos.z - (uint32_t)a.z), out++);
+    transform_point(v[0].pos.x + (uint32_t)a.x, v[0].pos.y + (uint32_t)a.y, v[0].pos.z + (uint32_t)a.z, out++);
+    transform_point(v[1].pos.x - (uint32_t)a.x, v[1].pos.y - (uint32_t)a.y, v[1].pos.z - (uint32_t)a.z, out++);
 }
 
 /* ------------------------------------------------------------------------

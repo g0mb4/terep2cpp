@@ -23,20 +23,35 @@
  * Small structures that live inside the data segment
  * ------------------------------------------------------------------------- */
 
-typedef struct PACKED Vec3fx {      /* 16.16 world position or velocity */
+typedef struct PACKED Vec3fx {      /* 16.16 signed vector: velocity, direction */
     int32_t x, y, z;
 } Vec3fx;
 
-/* Integer (map unit) part of a 16.16 coordinate. */
+/* Position on the map, unsigned, (0, 0, 0) at the corner of the terrain.
+ * In cells it is 8.24: the top byte is the map cell (x or y), the rest the
+ * position inside it.  Most of the code works in "map units" of 1/256
+ * cell (heights, radii, camera distances), where the same bits read as
+ * 16.16; map_int() gives those units. */
+typedef struct PACKED Vec3pos {
+    uint32_t x, y, z;
+} Vec3pos;
+
+/* Integer part of a 16.16 value, signed. */
 static inline int16_t fx_int(int32_t v) { return (int16_t)(v >> 16); }
 
+/* Integer part (map units) of a 16.16 position. */
+static inline uint16_t map_int(uint32_t p) { return (uint16_t)(p >> 16); }
+
+/* Signed difference of two positions (16.16). */
+static inline int32_t pos_delta(uint32_t a, uint32_t b) { return (int32_t)(a - b); }
+
 typedef struct PACKED ChaseCam {    /* state of the "follow" cameras (F3/F4/F5) */
-    Vec3fx  pos;
+    Vec3pos pos;
     int16_t yaw, pitch, roll;
 } ChaseCam;
 
 typedef struct PACKED Particle {    /* smoke puffs, sparks and ice chips */
-    Vec3fx  pos;
+    Vec3pos pos;
     Vec3fx  vel;
     int16_t life;                   /* counts down by 2 per tick */
     int16_t kind;                   /* surface byte that spawned it; 0x0f = ice chip, 1 = dust */
@@ -99,7 +114,7 @@ typedef struct PACKED PcxHeader {
  * ------------------------------------------------------------------------- */
 
 typedef struct PACKED CarVertex {   /* a mass point of the soft body */
-    Vec3fx   pos;
+    Vec3pos  pos;
     Vec3fx   vel;
     int16_t  radius;                /* collision radius against the ground */
     uint16_t wheel;                 /* 0 = body point, 0xffff = reference point, else wheel */

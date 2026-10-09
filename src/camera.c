@@ -9,11 +9,11 @@
  */
 #include "terep.h"
 
-/* Integer (map unit) part of a 16.16 value, readable and writable. */
-static int16_t ipart(const int32_t *v) { return fx_int(*v); }
-static void set_ipart(int32_t *v, int16_t i)
+/* Integer (map unit) part of a position, readable and writable. */
+static uint16_t ipart(const uint32_t *v) { return map_int(*v); }
+static void set_ipart(uint32_t *v, uint16_t i)
 {
-    *v = (int32_t)(((uint32_t)*v & 0xffff) | (uint32_t)(uint16_t)i << 16);
+    *v = (*v & 0xffff) | (uint32_t)i << 16;
 }
 
 /* Middle 16 bits of a 16.16 unit vector component (1.0 = 0x100). */
@@ -56,7 +56,7 @@ static void camera_on_car(Car *car)
 static void camera_on_car_smooth(Car *car)
 {
     eye_at_vertex(car);
-    int16_t ex = ipart(&G->eye.x), ey = ipart(&G->eye.y), ez = ipart(&G->eye.z);
+    uint16_t ex = ipart(&G->eye.x), ey = ipart(&G->eye.y), ez = ipart(&G->eye.z);
 
     uint16_t yaw = fx_atan2((int16_t)-mid16(G->cam_axis_y.x), mid16(G->cam_axis_y.y));
     G->eye_angles[2] = (int16_t)yaw;
@@ -86,9 +86,9 @@ static void camera_fixed(Car *car, ChaseCam *cam)
 {
     G->eye.x = cam->pos.x;
     G->eye.y = cam->pos.y;
-    int16_t ex = ipart(&G->eye.x), ey = ipart(&G->eye.y);
-    int16_t ground = terrain_height((uint16_t)ex, (uint16_t)ey);
-    G->eye.z = (int32_t)((uint32_t)(uint16_t)(ground + G->chase_height) << 16);
+    uint16_t ex = ipart(&G->eye.x), ey = ipart(&G->eye.y);
+    int16_t ground = terrain_height(ex, ey);
+    G->eye.z = (uint32_t)(uint16_t)(ground + G->chase_height) << 16;
 
     CarVertex *ref = car_ref_vertex(car);
     int16_t dx = (int16_t)(ipart(&ref->pos.x) - ex);
@@ -101,22 +101,22 @@ static void camera_fixed(Car *car, ChaseCam *cam)
 
 /* Put (x, y) chase_distance behind target along heading, and smooth z
  * towards chase_height above the ground (never less than 40 above it). */
-static void chase_follow(int16_t tx, int16_t ty, int16_t heading, int32_t *x, int32_t *y, int32_t *z)
+static void chase_follow(uint16_t tx, uint16_t ty, int16_t heading, uint32_t *x, uint32_t *y, uint32_t *z)
 {
     int16_t s = fx_sin((uint16_t)heading), c = fx_cos((uint16_t)heading);
     int16_t d2 = (int16_t)(G->chase_distance << 1);
     int16_t bx = (int16_t)(((int32_t)s * d2) >> 16);
     int16_t by = (int16_t)(((int32_t)c * d2) >> 16);
-    set_ipart(x, (int16_t)(tx - bx));
-    set_ipart(y, (int16_t)(ty + by));
+    set_ipart(x, (uint16_t)(tx - bx));
+    set_ipart(y, (uint16_t)(ty + by));
 
-    int16_t ground = terrain_height((uint16_t)ipart(x), (uint16_t)ipart(y));
+    int16_t ground = terrain_height(ipart(x), ipart(y));
     uint16_t min_z = (uint16_t)(ground + 0x28);
-    int16_t cz = ipart(z);
+    int16_t cz = (int16_t)ipart(z);
     cz = (int16_t)(cz + ((int16_t)(ground + G->chase_height - cz) >> 3));
     if (min_z > (uint16_t)cz)
         cz = (int16_t)min_z;
-    set_ipart(z, cz);
+    set_ipart(z, (uint16_t)cz);
 }
 
 static int16_t smooth_pitch(int16_t current, int16_t dz)
@@ -129,7 +129,7 @@ static int16_t smooth_pitch(int16_t current, int16_t dz)
 static void camera_chase(Car *car, ChaseCam *cam)
 {
     CarVertex *ref = car_ref_vertex(car);
-    int16_t rx = ipart(&ref->pos.x), ry = ipart(&ref->pos.y);
+    uint16_t rx = ipart(&ref->pos.x), ry = ipart(&ref->pos.y);
     cam->yaw = heading_to((int16_t)(rx - ipart(&cam->pos.x)), (int16_t)(ry - ipart(&cam->pos.y)));
     chase_follow(rx, ry, cam->yaw, &cam->pos.x, &cam->pos.y, &cam->pos.z);
     cam->pitch = smooth_pitch(cam->pitch, (int16_t)(ipart(&ref->pos.z) - ipart(&cam->pos.z)));
@@ -148,15 +148,15 @@ static void camera_all_cars(void)
     uint32_t n = (uint32_t)(uint16_t)G->num_cars;
     for (int i = 0; i < G->num_cars; i++) {
         CarVertex *ref = car_ref_vertex(car_get(i));
-        sx += (uint16_t)ipart(&ref->pos.x);
-        sy += (uint16_t)ipart(&ref->pos.y);
-        sz += (uint16_t)ipart(&ref->pos.z);
+        sx += ipart(&ref->pos.x);
+        sy += ipart(&ref->pos.y);
+        sz += ipart(&ref->pos.z);
     }
     G->cars_center[0] = (int16_t)(sx / n);
     G->cars_center[1] = (int16_t)(sy / n);
     G->cars_center[2] = (int16_t)((int32_t)sz / (int32_t)n);
 
-    int16_t cx = G->cars_center[0], cy = G->cars_center[1];
+    uint16_t cx = (uint16_t)G->cars_center[0], cy = (uint16_t)G->cars_center[1];
     G->eye_angles[2] = heading_to((int16_t)(cx - ipart(&G->eye.x)), (int16_t)(cy - ipart(&G->eye.y)));
     chase_follow(cx, cy, G->eye_angles[2], &G->eye.x, &G->eye.y, &G->eye.z);
     G->eye_angles[1] = smooth_pitch(G->eye_angles[1], (int16_t)(G->cars_center[2] - ipart(&G->eye.z)));

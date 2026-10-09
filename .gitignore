@@ -16,7 +16,7 @@ maincode_int.asm
 *.crc.new
 /*.tar.gz
 
-# Original game data (data.bin and the Asphalt track) belong to the demo's
+# Original game data (data.bin and the Asphalt track) belong to the demo's author
 /data/data.bin
 /data/Asphalt/
 

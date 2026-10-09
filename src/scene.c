@@ -34,15 +34,15 @@ int view_transform(int16_t x, int16_t y, int16_t z, ProjVertex *out)
     return 1;
 }
 
-static int16_t eye_int(int i)
+static uint16_t eye_int(int i)
 {
-    return fx_int((&G->eye.x)[i]);
+    return map_int((&G->eye.x)[i]);
 }
 
-/* Map cell (x | y << 8) of a 16.16 position. */
-static uint8_t cell_of(int32_t v)
+/* Map cell (x or y) of a 16.16 position. */
+static uint8_t cell_of(uint32_t v)
 {
-    return (uint8_t)((uint32_t)v >> 24);
+    return (uint8_t)(v >> 24);
 }
 
 /* ------------------------------------------------------------------------
@@ -131,8 +131,8 @@ static void vis_span_edge(int16_t x0, int16_t y0, int16_t x1, int16_t y1, int mi
  * x and y exchanged.  orig 1000:3fd0 / 1000:41b2 */
 static void compute_visible_area(int swap_xy)
 {
-    int16_t ex = (int16_t)((uint16_t)eye_int(0) >> 8);
-    int16_t ey = (int16_t)((uint16_t)eye_int(1) >> 8);
+    int16_t ex = (int16_t)(eye_int(0) >> 8);
+    int16_t ey = (int16_t)(eye_int(1) >> 8);
     int16_t s7 = G->yaw_sin7, c7 = G->yaw_cos7;
     int16_t c = (int16_t)(c7 >> 6), s = (int16_t)(s7 >> 6);
     Point2 *p = G->vis_buf[0].v;
@@ -433,9 +433,9 @@ void draw_particles(void)
             continue;
 
         ProjVertex v;
-        if (!view_transform((int16_t)(fx_int(p->pos.x) - eye_int(0)),
-                            (int16_t)(fx_int(p->pos.y) - eye_int(1)),
-                            (int16_t)(fx_int(p->pos.z) - eye_int(2)), &v))
+        if (!view_transform((int16_t)(map_int(p->pos.x) - eye_int(0)),
+                            (int16_t)(map_int(p->pos.y) - eye_int(1)),
+                            (int16_t)(map_int(p->pos.z) - eye_int(2)), &v))
             continue;
         draw_sprite(v.sx, v.sy, v.y, G->smoke_sprite[(uint8_t)p->kind >> 4]);
     }

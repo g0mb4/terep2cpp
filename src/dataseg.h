@@ -17,7 +17,7 @@ typedef struct __attribute__((packed)) DataSeg {
     ChaseCam chase_cam[2];                   /* 0080: free-floating camera state, one per player */
     uint16_t player_car[2];                  /* 00a4: car index followed by each view (Tab / Q) */
     uint8_t _pad_00a8[0x2];
-    Vec3fx eye;                              /* 00aa: camera position (16.16) */
+    Vec3pos eye;                             /* 00aa: camera position (16.16) */
     uint8_t _pad_00b6[0xc];
     int16_t eye_angles[3];                   /* 00c2: roll, pitch, yaw of the camera */
     int16_t cars_center[3];                  /* 00c8: average car position (camera 5) */
@@ -135,7 +135,7 @@ typedef struct __attribute__((packed)) DataSeg {
     int32_t surface_max_load[16];            /* ea59 */
     uint16_t hull_plane_bytes;               /* ea99 */
     HullPlane hull_normal[16];               /* ea9b */
-    HullPlane hull_point[16];                /* eb5b */
+    Vec3pos hull_point[16];                  /* eb5b */
     uint16_t hull_tri_count;                 /* ec1b */
     uint16_t hull_tri[7][3];                 /* ec1d: car vertices forming the collision hull */
     uint8_t _pad_ec47[0x9];

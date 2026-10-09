@@ -114,17 +114,17 @@ static void car_update_wheels(Car *car)
 /* Unit vector across the car (vertex 6 -> vertex 7).  orig 1000:1091 */
 Vec3fx car_axis_x(CarVertex *v)
 {
-    return vec3_normalize(v[7].pos.x - v[6].pos.x,
-                          v[7].pos.y - v[6].pos.y,
-                          v[7].pos.z - v[6].pos.z);
+    return vec3_normalize(pos_delta(v[7].pos.x, v[6].pos.x),
+                          pos_delta(v[7].pos.y, v[6].pos.y),
+                          pos_delta(v[7].pos.z, v[6].pos.z));
 }
 
 /* Unit vector along the car ((4 - 6) + (5 - 7)).  orig 1000:10b6 */
 Vec3fx car_axis_y(CarVertex *v)
 {
-    return vec3_normalize(v[4].pos.x - v[6].pos.x + v[5].pos.x - v[7].pos.x,
-                          v[4].pos.y - v[6].pos.y + v[5].pos.y - v[7].pos.y,
-                          v[4].pos.z - v[6].pos.z + v[5].pos.z - v[7].pos.z);
+    return vec3_normalize(pos_delta(v[4].pos.x + v[5].pos.x, v[6].pos.x + v[7].pos.x),
+                          pos_delta(v[4].pos.y + v[5].pos.y, v[6].pos.y + v[7].pos.y),
+                          pos_delta(v[4].pos.z + v[5].pos.z, v[6].pos.z + v[7].pos.z));
 }
 
 static struct {
@@ -197,9 +197,9 @@ static void wheel_set_speed(Car *car, uint16_t i, int32_t ground_speed)
 static void car_update_mid(Car *car)
 {
     CarVertex *v = car_vertices(car);
-    car->mid[0] = (int16_t)(((uint16_t)fx_int(v[4].pos.x) >> 1) + ((uint16_t)fx_int(v[6].pos.x) >> 1));
-    car->mid[1] = (int16_t)(((uint16_t)fx_int(v[4].pos.y) >> 1) + ((uint16_t)fx_int(v[6].pos.y) >> 1));
-    car->mid[2] = (int16_t)(((uint16_t)fx_int(v[4].pos.z) >> 1) + ((uint16_t)fx_int(v[6].pos.z) >> 1));
+    car->mid[0] = (int16_t)((map_int(v[4].pos.x) >> 1) + (map_int(v[6].pos.x) >> 1));
+    car->mid[1] = (int16_t)((map_int(v[4].pos.y) >> 1) + (map_int(v[6].pos.y) >> 1));
+    car->mid[2] = (int16_t)((map_int(v[4].pos.z) >> 1) + (map_int(v[6].pos.z) >> 1));
     wheel_dirs.valid = 0;
 }
 
@@ -231,9 +231,9 @@ static void car_update_springs(Car *car)
     do {
         CarVertex *pa = &verts[s->a];
         CarVertex *pb = &verts[s->b];
-        int32_t dx = pa->pos.x - pb->pos.x;
-        int32_t dy = pa->pos.y - pb->pos.y;
-        int32_t dz = pa->pos.z - pb->pos.z;
+        int32_t dx = pos_delta(pa->pos.x, pb->pos.x);
+        int32_t dy = pos_delta(pa->pos.y, pb->pos.y);
+        int32_t dz = pos_delta(pa->pos.z, pb->pos.z);
 
         /* length one step ahead: positions plus relative velocity */
         float fx = (float)(dx + (pa->vel.x - pb->vel.x));
@@ -372,7 +372,7 @@ void spawn_particle(CarVertex *v)
     Particle *p = (Particle *)ds_ptr((uint16_t)(offsetof(DataSeg, particles) + at));
     p->pos.x = v->pos.x;
     p->pos.y = v->pos.y;
-    p->pos.z = v->pos.z - (int32_t)((uint32_t)(uint16_t)v->radius << 16);
+    p->pos.z = v->pos.z - ((uint32_t)(uint16_t)v->radius << 16);
     p->vel.x = mulq31(contact.slide[0], N1C);
     p->vel.y = mulq31(contact.slide[1], N2C);
     p->vel.z = v->vel.z;
@@ -494,8 +494,8 @@ static void car_update_points(Car *car)
     do {
         v->vel.z -= G->gravity;
 
-        int16_t z = fx_int(v->pos.z);
-        int16_t ground = (int16_t)(ground_probe((uint16_t)fx_int(v->pos.x), (uint16_t)fx_int(v->pos.y)) + v->radius);
+        int16_t z = (int16_t)map_int(v->pos.z);
+        int16_t ground = (int16_t)(ground_probe(map_int(v->pos.x), map_int(v->pos.y)) + v->radius);
         if ((int16_t)(ground - z) >= 0) {
             /* below the ground: damp by surface, then collide */
             int shift = G->surface_damp_shift[G->ground_surface >> 4];
@@ -511,22 +511,22 @@ static void car_update_points(Car *car)
         }
 
         /* invisible walls half a cell inside the map border */
-        if ((uint16_t)(fx_int(v->pos.x) - v->radius) < 0x80) {
+        if ((uint16_t)(map_int(v->pos.x) - v->radius) < 0x80) {
             set_contact_frame((int16_t)0x8000, 0, 0, 0x7f00);
             G->ground_surface = 0;
             ground_contact(car, v, i);
         }
-        if ((uint16_t)(fx_int(v->pos.y) - v->radius) < 0x80) {
+        if ((uint16_t)(map_int(v->pos.y) - v->radius) < 0x80) {
             set_contact_frame(0, 0x7fff, (int16_t)0x8000, 0);
             G->ground_surface = 0;
             ground_contact(car, v, i);
         }
-        if ((uint16_t)(fx_int(v->pos.x) + v->radius) > 0xfe80) {
+        if ((uint16_t)(map_int(v->pos.x) + v->radius) > 0xfe80) {
             set_contact_frame(0x7fff, 0, 0, 0x7fff);
             G->ground_surface = 0;
             ground_contact(car, v, i);
         }
-        if ((uint16_t)(fx_int(v->pos.y) + v->radius) > 0xfe80) {
+        if ((uint16_t)(map_int(v->pos.y) + v->radius) > 0xfe80) {
             set_contact_frame(0, 0x7fff, 0x7fff, 0);
             G->ground_surface = 0;
             ground_contact(car, v, i);
@@ -556,19 +556,19 @@ static void car_build_hull(Car *car)
     CarVertex *verts = car_vertices(car);
     G->hull_plane_bytes = 0;
     for (int t = 0; t < G->hull_tri_count; t++) {
-        Vec3fx *p = &verts[G->hull_tri[t][0]].pos;
-        Vec3fx *q = &verts[G->hull_tri[t][1]].pos;
-        Vec3fx *r = &verts[G->hull_tri[t][2]].pos;
+        Vec3pos *p = &verts[G->hull_tri[t][0]].pos;
+        Vec3pos *q = &verts[G->hull_tri[t][1]].pos;
+        Vec3pos *r = &verts[G->hull_tri[t][2]].pos;
+        int32_t pqx = pos_delta(p->x, q->x), pqy = pos_delta(p->y, q->y), pqz = pos_delta(p->z, q->z);
+        int32_t prx = pos_delta(p->x, r->x), pry = pos_delta(p->y, r->y), prz = pos_delta(p->z, r->z);
         HullPlane n;
         /* cross product of (p - q) and (p - r) */
-        n.x = hull_normal_component(p->y - q->y, p->y - r->y, p->z - r->z, p->z - q->z);
-        n.y = -hull_normal_component(p->z - r->z, p->z - q->z, p->x - q->x, p->x - r->x);
-        n.z = hull_normal_component(p->x - r->x, p->x - q->x, p->y - q->y, p->y - r->y);
+        n.x = hull_normal_component(pqy, pry, prz, pqz);
+        n.y = -hull_normal_component(prz, pqz, pqx, prx);
+        n.z = hull_normal_component(prx, pqx, pqy, pry);
         int k = G->hull_plane_bytes / sizeof(HullPlane);
         G->hull_normal[k] = n;
-        G->hull_point[k].x = p->x;
-        G->hull_point[k].y = p->y;
-        G->hull_point[k].z = p->z;
+        G->hull_point[k] = *p;
         G->hull_plane_bytes += sizeof(HullPlane);
     }
 }
@@ -586,10 +586,11 @@ static void car_push_points(Car *a, Car *b)
         int32_t best_d = INT32_MIN;
         int inside = 1;
         for (int k = 0; k < planes; k++) {
-            HullPlane *q = &G->hull_point[k], *nrm = &G->hull_normal[k];
-            int32_t d = ((v->pos.x - q->x) >> 16) * nrm->x
-                      + ((v->pos.y - q->y) >> 16) * nrm->y
-                      + ((v->pos.z - q->z) >> 16) * nrm->z;
+            Vec3pos *q = &G->hull_point[k];
+            HullPlane *nrm = &G->hull_normal[k];
+            int32_t d = (pos_delta(v->pos.x, q->x) >> 16) * nrm->x
+                      + (pos_delta(v->pos.y, q->y) >> 16) * nrm->y
+                      + (pos_delta(v->pos.z, q->z) >> 16) * nrm->z;
             if (d >= 0) {
                 inside = 0;
                 break;
@@ -605,13 +606,14 @@ static void car_push_points(Car *a, Car *b)
             v->vel.y += nrm->y;
             v->vel.z += nrm->z;
 
-            /* The reaction goes to the point of car a closest to the map
-             * origin (|x|+|y|+|z| of the integer parts).  Surely meant to
+            /* The reaction goes to the point of car a with the smallest
+             * |x|+|y|+|z|, the integer parts taken as signed 16-bit (so
+             * nearest to a corner of the map, not to v).  Surely meant to
              * be the closest point to v, but that's what it does. */
             CarVertex *av = car_vertices(a), *target = av;
             int16_t best_l1 = 0x7fff;
             for (uint16_t j = car_vertex_count(a); j; j--, av++) {
-                int16_t l1 = (int16_t)(abs16(fx_int(av->pos.x)) + abs16(fx_int(av->pos.y)) + abs16(fx_int(av->pos.z)));
+                int16_t l1 = (int16_t)(abs16((int16_t)map_int(av->pos.x)) + abs16((int16_t)map_int(av->pos.y)) + abs16((int16_t)map_int(av->pos.z)));
                 if (l1 < best_l1) {
                     best_l1 = l1;
                     target = av;
@@ -641,9 +643,9 @@ static void cars_collide(void)
             if (b == a)
                 continue;
             CarVertex *ra = car_vertices(a), *rb = car_vertices(b);
-            int16_t dx = (int16_t)(fx_int(ra->pos.x) - fx_int(rb->pos.x));
-            int16_t dy = (int16_t)(fx_int(ra->pos.y) - fx_int(rb->pos.y));
-            int16_t dz = (int16_t)(fx_int(ra->pos.z) - fx_int(rb->pos.z));
+            int16_t dx = (int16_t)(map_int(ra->pos.x) - map_int(rb->pos.x));
+            int16_t dy = (int16_t)(map_int(ra->pos.y) - map_int(rb->pos.y));
+            int16_t dz = (int16_t)(map_int(ra->pos.z) - map_int(rb->pos.z));
             if (dx > 0x200 || dx < -0x200 || dy > 0x200 || dy < -0x200 || dz > 0x200 || dz < -0x200)
                 continue;
             car_push_points(a, b);
@@ -675,8 +677,9 @@ static void particles_update(void)
         p->pos.z += p->vel.z;
         if (p->kind == 0x0f) {
             /* ice chip: falls until it hits the ground, then chips the ice */
-            int16_t x = fx_int(p->pos.x), y = fx_int(p->pos.y), z = fx_int(p->pos.z);
-            int16_t h = terrain_height((uint16_t)x, (uint16_t)y);
+            uint16_t x = map_int(p->pos.x), y = map_int(p->pos.y);
+            int16_t z = (int16_t)map_int(p->pos.z);
+            int16_t h = terrain_height(x, y);
             if ((int16_t)(h - z) < 0) {
                 p->vel.z -= G->gravity >> 1;
             } else {
@@ -684,7 +687,7 @@ static void particles_update(void)
                 uint8_t *col = &colormap()[cell];
                 if (*col & 0x0f)
                     (*col)--;
-                cell = (uint16_t)(((y + 0x80) & 0xff00) | ((uint16_t)(x + 0x80) >> 8));
+                cell = (uint16_t)(((uint16_t)(y + 0x80) & 0xff00) | ((uint16_t)(x + 0x80) >> 8));
                 heightmap()[cell]--;
                 p->kind = 1;
                 p->vel.x = 0;
@@ -706,17 +709,17 @@ static void car_jump(Car *car, int keep_point)
 
     if (!keep_point) {
         CarVertex *low = v;
-        int16_t low_z = fx_int(v->pos.z);
+        int16_t low_z = (int16_t)map_int(v->pos.z);  /* compared signed, as the original */
         for (uint16_t i = 1; i < n; i++) {
-            if (fx_int(v[i].pos.z) < low_z) {
-                low_z = fx_int(v[i].pos.z);
+            if ((int16_t)map_int(v[i].pos.z) < low_z) {
+                low_z = (int16_t)map_int(v[i].pos.z);
                 low = &v[i];
             }
         }
         car->lowest_vertex = ds_ofs(low);
         /* quirk: the original searches with AX, which is the low half of
          * the kick, so the low word ends up as the last vertex's height */
-        kick = (int32_t)(((uint32_t)kick & 0xffff0000u) | (uint16_t)fx_int(v[n - 1].pos.z));
+        kick = (int32_t)(((uint32_t)kick & 0xffff0000u) | map_int(v[n - 1].pos.z));
     }
     /* bug kept: a car that was never kicked has lowest_vertex = 0, so a key
      * still held after switching to it adds to DS 0x14..0x17, which is the
