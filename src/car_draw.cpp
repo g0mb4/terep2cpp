@@ -48,13 +48,13 @@ static void transform_car(Car &car)
 /* ------------------------------------------------------------------------
  * Model bytecode
  *
- * The program counter is an offset in car.model (in the original, a data
+ * The program counter is an offset in car.model.code (in the original, a data
  * segment offset); all operands are 16-bit little-endian unless noted.  Point operands index car_proj.  "hidden"
  * is the result of the last facing test (shared with the terrain code).
  * Only the low 5 bits of an opcode count.
  * ---------------------------------------------------------------------- */
 
-enum Op : uint8_t {
+enum Program::Op : uint8_t {
     OP_END = 0,         /* also 11..15: end of (sub)program */
     OP_PIXEL = 1,       /* p, color             plot a pixel */
     OP_NEARER = 2,      /* p, q, -              hidden = p is nearer than q */
@@ -74,18 +74,11 @@ enum Op : uint8_t {
     OP_JUMP_HIDDEN = 20,    /* rel              jump if hidden */
 };
 
-/* The program being run.  Reads past its end give 0 (the original would
- * read whatever follows the car in the data segment). */
-static const std::vector<uint8_t> *program;
-
-static uint8_t rd8(uint16_t pc) { return pc < program->size() ? (*program)[pc] : 0; }
-static uint16_t rd16(uint16_t pc) { return (uint16_t)(rd8(pc) | rd8((uint16_t)(pc + 1)) << 8); }
-static uint32_t rd32(uint16_t pc) { return rd16(pc) | (uint32_t)rd16((uint16_t)(pc + 2)) << 16; }
 static const ProjVertex &point(uint16_t i) { return *reinterpret_cast<const ProjVertex *>(ds_ptr((uint16_t)(offsetof(DataSeg, car_proj) + i * sizeof(ProjVertex)))); }
 
 /* Reads the outline of an n-sided polygon (n points + the closing one).
  * Returns the number of points that survived the near plane. */
-static uint16_t read_outline(uint16_t &pc, uint8_t n, Op kind, uint16_t base)
+uint16_t Program::read_outline(uint16_t &pc, uint8_t n, Op kind, uint16_t base) const
 {
     uint16_t count = 0;
     for (int i = 0; i <= n; i++) {
@@ -120,7 +113,7 @@ static bool outline_visible(uint16_t count)
 /* Wheel sprite (OP_WHEEL).  The angle between the line of sight and the
  * axle p->q picks one of nine views; the sprite is rotated to the axle's
  * direction on screen. */
-static void draw_wheel(uint16_t ops)
+void Program::draw_wheel(uint16_t ops) const
 {
     const ProjVertex &a = point(rd16(ops)), &b = point(rd16((uint16_t)(ops + 2)));
 
@@ -164,7 +157,7 @@ static void draw_wheel(uint16_t ops)
     draw_textured();
 }
 
-static SpriteQuad read_sprite(uint16_t pc)
+SpriteQuad Program::read_sprite(uint16_t pc) const
 {
     SpriteQuad q;
     q.size = (int16_t)rd16(pc);
@@ -174,7 +167,7 @@ static SpriteQuad read_sprite(uint16_t pc)
 }
 
 /* orig 1000:1408 */
-static void run_model(uint16_t pc)
+void Program::run(uint16_t pc) const
 {
     for (;;) {
         Op op = (Op)(rd8(pc++) & 0x1f);
@@ -248,11 +241,11 @@ static void run_model(uint16_t pc)
         case OP_SORT2: {
             uint16_t a = (uint16_t)(pc + rd16(pc)), b = (uint16_t)(pc + rd16((uint16_t)(pc + 2)));
             if (!poly_hidden) {
-                run_model(a);
-                run_model(b);
+                run(a);
+                run(b);
             } else {
-                run_model(b);
-                run_model(a);
+                run(b);
+                run(a);
             }
             pc += 4;
             break;
@@ -261,7 +254,7 @@ static void run_model(uint16_t pc)
             pc = (uint16_t)(pc + 2 + rd16(pc));
             break;
         case OP_CALL:
-            run_model((uint16_t)(pc + 2 + rd16(pc)));
+            run((uint16_t)(pc + 2 + rd16(pc)));
             pc += 2;
             break;
         case OP_JUMP_VISIBLE:
@@ -281,6 +274,5 @@ void draw_car(Car &car)
 {
     raster_texture = seg_ptr(car.texture_seg ? car.texture_seg : G->seg_textures);
     transform_car(car);
-    program = &car.model;
-    run_model(0);
+    car.model.run(0);
 }

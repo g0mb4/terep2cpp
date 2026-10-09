@@ -152,6 +152,25 @@ struct PACKED PcxHeader {
  * gives the original bytes back (the tests compare those).
  * ------------------------------------------------------------------------- */
 
+/* A car's model: a small drawing program, run by car_draw.cpp.  Reads past
+ * its end give 0 (the original would read whatever follows the car in the
+ * data segment). */
+struct Program {
+    enum Op : uint8_t;              /* the opcodes (car_draw.cpp) */
+
+    std::vector<uint8_t> code;      /* pc 0 is its start */
+
+    void run(uint16_t pc) const;    /* draw with the points in G->car_proj */
+
+private:
+    uint8_t  rd8(uint16_t pc) const { return pc < code.size() ? code[pc] : 0; }
+    uint16_t rd16(uint16_t pc) const { return (uint16_t)(rd8(pc) | rd8((uint16_t)(pc + 1)) << 8); }
+    uint32_t rd32(uint16_t pc) const { return rd16(pc) | (uint32_t)rd16((uint16_t)(pc + 2)) << 16; }
+    uint16_t read_outline(uint16_t &pc, uint8_t n, Op kind, uint16_t base) const;
+    void draw_wheel(uint16_t ops) const;
+    SpriteQuad read_sprite(uint16_t pc) const;
+};
+
 struct CarVertex {                  /* a mass point of the soft body */
     Pos      pos;
     Vec3     vel;
@@ -183,7 +202,7 @@ struct Car {
 
     std::vector<CarVertex> points;
     std::vector<CarSpring> spring_list;
-    std::vector<uint8_t>   model;   /* the drawing program; pc 0 is its start */
+    Program                model;   /* the drawing program */
 
     uint16_t drive = REAR;          /* Drive (from the file) */
     Angle    steer = {};            /* current steering angle, +-45 deg */

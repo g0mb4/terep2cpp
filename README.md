@@ -113,7 +113,8 @@ no exceptions, no inheritance):
   value where the original does arithmetic on it (shifts, 32-bit products).
 - **Methods on the car.** `Car` is the `carN.dat` header with `vertices()`, `springs()` and the
   physics as methods (`car.update_springs()`, `car.jump(...)`); `CarSpring::type()/softness()`,
-  `CarVertex::is_wheel()`, `Particle::ICE_CHIP` etc.
+  `CarVertex::is_wheel()`, `Particle::ICE_CHIP` etc. The car's model is a `Program` (its bytes
+  plus the interpreter as methods: `car.model.run(0)`).
 - **References, `bool`, `enum`, lambdas** instead of output pointers, int flags, `#define`s and
   local macros; no `goto`.
 - `#pragma once` in every header; the data segment structs are trivially copyable, with no

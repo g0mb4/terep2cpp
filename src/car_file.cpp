@@ -99,7 +99,7 @@ uint16_t car_read(Car &car, FILE *f)
     for (uint16_t i = 0, n = r.u16(so); i < n && so + 2 + (i + 1) * carfile::SPRING <= size; i++)
         car.spring_list.push_back(read_spring(r, so + 2 + i * carfile::SPRING));
     if (mo < size)
-        car.model.assign(file.begin() + (ptrdiff_t)mo, file.begin() + (ptrdiff_t)size);
+        car.model.code.assign(file.begin() + (ptrdiff_t)mo, file.begin() + (ptrdiff_t)size);
     return (uint16_t)size;
 }
 
@@ -111,7 +111,7 @@ std::vector<uint8_t> car_write(const Car &car, uint16_t ds_base)
     size_t vo = carfile::HEADER;
     size_t so = vo + 2 + car.points.size() * carfile::VERTEX;
     size_t mo = so + 2 + car.spring_list.size() * carfile::SPRING;
-    std::vector<uint8_t> out(mo + car.model.size());
+    std::vector<uint8_t> out(mo + car.model.code.size());
     Writer w = { out };
     auto vertex_ofs = [&](size_t i) { return (uint16_t)(vo + 2 + i * carfile::VERTEX); };
 
@@ -161,7 +161,7 @@ std::vector<uint8_t> car_write(const Car &car, uint16_t ds_base)
         w.u16(at + 10, s.min_len);
         w.u16(at + 12, s.max_len);
     }
-    memcpy(out.data() + mo, car.model.data(), car.model.size());
+    memcpy(out.data() + mo, car.model.code.data(), car.model.code.size());
     return out;
 }
 
