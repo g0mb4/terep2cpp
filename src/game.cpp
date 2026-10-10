@@ -29,6 +29,14 @@ bool extra_option_enable(const char *name)
 static const char port_banner[] = "GAMBIARRA FOREVER!";
 static uint8_t banner_color;
 
+/* What game_frame keeps from one frame to the next outside the data
+ * segment, as at the start of the program (called by game_init). */
+void game_frame_reset()
+{
+    banner_color = 0;
+    poly_hidden = false;
+}
+
 /* In the original's 320x200 coordinates, scaled to the screen. */
 static void set_viewport(int16_t top, int16_t center_y, int16_t bottom)
 {

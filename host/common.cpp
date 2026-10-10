@@ -31,6 +31,17 @@ int seg_alloc(uint16_t paragraphs, uint16_t *handle)
     return 0;
 }
 
+void host_free_game()
+{
+    for (uint16_t i = 1; i < used; i++) {
+        free(segments[i]);
+        segments[i] = nullptr;
+    }
+    used = 1;
+    free(G);
+    G = nullptr;
+}
+
 bool host_init_dataseg()
 {
     G = static_cast<DataSeg *>(calloc(1, 0x10000));

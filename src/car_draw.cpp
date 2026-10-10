@@ -272,7 +272,7 @@ static bool outline_visible(uint16_t count)
 /* Wheel sprite (OP_WHEEL).  The angle between the line of sight and the
  * axle p->q picks one of nine views; the sprite is rotated to the axle's
  * direction on screen. */
-static void draw_wheel(const ModelOp &o)
+static void draw_wheel(const ModelOp &o, const uint8_t *tex)
 {
     const ProjVertex &a = point(o.p[0]), &b = point(o.p[1]);
 
@@ -311,7 +311,7 @@ static void draw_wheel(const ModelOp &o)
         out[i].b = (uint16_t)(w.uv[i] >> 16);
     }
     G->poly_buf[0].count = 4;
-    draw_textured();
+    draw_textured(tex);
 }
 
 namespace {
@@ -319,11 +319,12 @@ namespace {
 /* A decoded model being run. */
 class Program {
 public:
-    explicit Program(const std::vector<ModelOp> &ops) : ops(ops) {}
+    Program(const std::vector<ModelOp> &ops, const uint8_t *texture) : ops(ops), tex(texture) {}
     void run(uint32_t i);           /* from instruction i to its OP_END */
 
 private:
     const std::vector<ModelOp> &ops;
+    const uint8_t *tex;             /* the car's skin, or textures.pcx */
 };
 
 /* orig 1000:1408 */
@@ -370,17 +371,17 @@ void Program::run(uint32_t i)
             break;
         case OP_TEXTURED:               /* FUN_1000_1408.LAB_LOC_16 */
             if (outline_visible(draw_outline(o)))
-                draw_textured();
+                draw_textured(tex);
             break;
         case OP_SPRITE: {               /* FUN_1000_1408.LAB_LOC_18 */
             const ProjVertex &p = point(o.p[0]);
             if (p.y >= G->near_clip)
-                draw_sprite(p.sx, p.sy, p.y, o.sprite);
+                draw_sprite(p.sx, p.sy, p.y, o.sprite, tex);
             break;
         }
         case OP_WHEEL:                  /* FUN_1000_1408.LAB_LOC_20 */
             if (point(o.p[0]).y >= G->near_clip)
-                draw_wheel(o);
+                draw_wheel(o, tex);
             break;
         case OP_SORT2:                  /* FUN_1000_1408.LAB_LOC_24 */
             if (!poly_hidden) {
@@ -417,10 +418,9 @@ void Program::run(uint32_t i)
 /* orig 1000:1323 */
 void draw_car(Car &car)
 {
-    raster_texture = seg_ptr(car.texture_seg ? car.texture_seg : G->seg_textures);
     transform_car(car);
     if (!car.model_ops.empty()) {
-        Program program(car.model_ops);
+        Program program(car.model_ops, seg_ptr(car.texture_seg ? car.texture_seg : G->seg_textures));
         program.run(0);
     }
 }

@@ -13,8 +13,9 @@
  *
  * -n, --no-sound: no sound (the AdLib emulator is not started).
  *
- * Esc quits.
+ * Esc quits, or goes back to the chooser if the game was started from it.
  */
+#include <climits>
 #include <cstdlib>
 #include <string>
 #include <string_view>
@@ -94,6 +95,87 @@ static uint8_t pc_scancode(SDL_Scancode s)
     return 0;
 }
 
+enum class Ending { BACK, QUIT, FAILED };   // Esc, window closed, could not start
+
+// The game loop: physics at 120 Hz, the picture at 60 Hz.
+static Ending run(SDL_Renderer *ren)
+{
+    const int w = screen_w(), h = screen_h();
+    SDL_RenderSetLogicalSize(ren, w, h);
+    SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, w, h);
+    std::vector<uint8_t> rgb((size_t)w * h * 3);
+
+    const uint64_t freq = SDL_GetPerformanceFrequency();
+    uint64_t next_tick = SDL_GetPerformanceCounter(), next_frame = next_tick;
+    Ending end = Ending::BACK;
+    for (bool running = true; running;) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) {
+                end = Ending::QUIT;
+                running = false;
+            } else if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
+                uint8_t sc = pc_scancode(e.key.keysym.scancode);
+                if (sc == 0x01 && e.type == SDL_KEYDOWN)
+                    running = false;
+                else if (sc)
+                    game_key(e.type == SDL_KEYUP ? sc | 0x80 : sc);
+            }
+        }
+
+        uint64_t now = SDL_GetPerformanceCounter();
+        while (now >= next_tick) {          // 120 Hz physics
+            physics_tick();
+            next_tick += freq / 120;
+        }
+        if (now >= next_frame) {            // 60 Hz display
+            next_frame += freq / 60;
+            if (now > next_frame + freq / 4)
+                next_frame = now;           // do not try to catch up after a stall
+            if (game_frame())
+                running = false;
+            const uint8_t *scr = screen();
+            for (int i = 0; i < w * h; i++)
+                memcpy(&rgb[i * 3], host_palette(scr[i]), 3);
+            SDL_UpdateTexture(tex, nullptr, rgb.data(), w * 3);
+            SDL_RenderClear(ren);
+            SDL_RenderCopy(ren, tex, nullptr, nullptr);
+            SDL_RenderPresent(ren);
+        } else {
+            SDL_Delay(1);
+        }
+    }
+    SDL_DestroyTexture(tex);
+    return end;
+}
+
+// One game on track, from a fresh data segment, until Esc or the window is
+// closed; everything it used is freed again.
+static Ending play(SDL_Renderer *ren, const std::string &track, bool no_sound)
+{
+    char here[PATH_MAX];
+    if (!getcwd(here, sizeof here))
+        return Ending::FAILED;
+    if (!no_sound)
+        opl_sound_start();                          // before game_init, which sets up the AdLib
+    Ending end = Ending::FAILED;
+    if (!host_init_dataseg()) {
+        opl_sound_stop();
+        return end;
+    }
+    if (chdir(track.c_str()) != 0)
+        perror(track.c_str());
+    else if (game_init() != 0 || G->num_cars <= 0)
+        fprintf(stderr, "could not load the track in %s (no car1.dat?)\n", track.c_str());
+    else
+        end = run(ren);
+    opl_sound_stop();
+    host_free_game();
+    if (chdir(here) != 0)
+        perror(here);
+    return end;
+}
+
 int main(int argc, char **argv)
 {
     std::string track;
@@ -129,8 +211,9 @@ int main(int argc, char **argv)
         fprintf(stderr, "SDL: %s\n", SDL_GetError());
         return 1;
     }
+    const bool chooser = track.empty();
     int win_w = 320 * MIN_ZOOM, win_h = 200 * MIN_ZOOM;
-    if (!track.empty())
+    if (!chooser)
         window_size(&win_w, &win_h);
     SDL_Window *win = SDL_CreateWindow("Terep2", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                        win_w, win_h, SDL_WINDOW_RESIZABLE);
@@ -139,76 +222,31 @@ int main(int argc, char **argv)
         fprintf(stderr, "SDL: %s\n", SDL_GetError());
         return 1;
     }
-    if (track.empty()) {
+    if (chooser) {
         if (!scale_given)
             render_scale = 3;                       // the chooser starts at 3x
-        if (!launcher_run(win, ren, &track, &no_sound)) {
-            SDL_Quit();
-            return 0;
-        }
-        window_size(&win_w, &win_h);                // for the scale chosen there
-        SDL_SetWindowSize(win, win_w, win_h);
-        SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+        extra_options.fix_ice_bug = true;           // offered on there; the game alone stays faithful
     }
 
-    if (!no_sound)
-        opl_sound_start();                          // before game_init, which sets up the AdLib
-    if (!host_init_dataseg())
-        return 1;
-    if (chdir(track.c_str()) != 0) {
-        perror(track.c_str());
-        return 1;
-    }
-    if (game_init() != 0 || G->num_cars <= 0) {
-        fprintf(stderr, "could not load the track in %s (no car1.dat?)\n", track.c_str());
-        return 1;
-    }
-
-    const int w = screen_w(), h = screen_h();
-    SDL_RenderSetLogicalSize(ren, w, h);
-    SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, w, h);
-    std::vector<uint8_t> rgb((size_t)w * h * 3);
-
-    const uint64_t freq = SDL_GetPerformanceFrequency();
-    uint64_t next_tick = SDL_GetPerformanceCounter(), next_frame = next_tick;
-    bool running = true;
-    while (running) {
-        SDL_Event e;
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_QUIT)
-                running = false;
-            else if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
-                uint8_t sc = pc_scancode(e.key.keysym.scancode);
-                if (sc == 0x01 && e.type == SDL_KEYDOWN)
-                    running = false;
-                else if (sc)
-                    game_key(e.type == SDL_KEYUP ? sc | 0x80 : sc);
-            }
+    // Esc in a game started from the chooser goes back to it, for another track
+    for (;;) {
+        if (chooser) {
+            SDL_RenderSetLogicalSize(ren, 0, 0);
+            SDL_SetWindowSize(win, 320 * MIN_ZOOM, 200 * MIN_ZOOM);
+            SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+            if (!launcher_run(win, ren, &track, &no_sound))
+                break;
+            window_size(&win_w, &win_h);            // for the scale chosen there
+            SDL_SetWindowSize(win, win_w, win_h);
+            SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
         }
-
-        uint64_t now = SDL_GetPerformanceCounter();
-        while (now >= next_tick) {          // 120 Hz physics
-            physics_tick();
-            next_tick += freq / 120;
-        }
-        if (now >= next_frame) {            // 60 Hz display
-            next_frame += freq / 60;
-            if (now > next_frame + freq / 4)
-                next_frame = now;           // do not try to catch up after a stall
-            if (game_frame())
-                running = false;
-            const uint8_t *scr = screen();
-            for (int i = 0; i < w * h; i++)
-                memcpy(&rgb[i * 3], host_palette(scr[i]), 3);
-            SDL_UpdateTexture(tex, nullptr, rgb.data(), w * 3);
-            SDL_RenderClear(ren);
-            SDL_RenderCopy(ren, tex, nullptr, nullptr);
-            SDL_RenderPresent(ren);
-        } else {
-            SDL_Delay(1);
-        }
+        Ending end = play(ren, track, no_sound);
+        if (end == Ending::FAILED && !chooser)
+            return 1;
+        if (end == Ending::QUIT || !chooser)
+            break;
     }
-    opl_sound_stop();
     SDL_Quit();
     return 0;
 }
+

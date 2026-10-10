@@ -207,7 +207,14 @@ static void load_cars()
 /* Returns 0 on success.  orig f_init */
 int game_init()
 {
+    /* everything outside the data segment as at the start of the program */
     memset(keys, 0xff, sizeof keys);
+    for (Car &c : cars)
+        c = Car();
+    game_frame_reset();
+    free(hires_screen);
+    hires_screen = nullptr;
+
     G->num_cars = -2;
     G->unk_ec50 = 0x78;
     G->gravity = 0x1800;

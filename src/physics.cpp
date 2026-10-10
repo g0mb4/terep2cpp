@@ -121,20 +121,14 @@ static Vec3 axis_y(const CarVertex *v)
 Vec3 Car::axis_x() { return ::axis_x(vertices()); }
 Vec3 Car::axis_y() { return ::axis_y(vertices()); }
 
-static struct {
-    unsigned valid;                 /* bit 0: steered, bit 1: straight (orig 1000:0e67) */
-    Vec3     steered;               /* orig 1000:12a7 */
-    Vec3     straight;              /* orig 1000:12bf */
-} wheel_dirs;
-
 /* Longitudinal axis turned by the steering angle.  orig 1000:1136 */
 void Car::compute_steered_dir()
 {
     Vec3 ax = axis_x(), ay = axis_y();
     int32_t s = fx_sin(steer_used).q31(), c = fx_cos(steer_used).q31();
 
-    wheel_dirs.straight = ay;
-    wheel_dirs.steered = { (mul_hi32(ay.x, c) - mul_hi32(ax.x, s)) << 1,
+    wheel_dirs_cache.straight = ay;
+    wheel_dirs_cache.steered = { (mul_hi32(ay.x, c) - mul_hi32(ax.x, s)) << 1,
                            (mul_hi32(ay.y, c) - mul_hi32(ax.y, s)) << 1,
                            (mul_hi32(ay.z, c) - mul_hi32(ax.z, s)) << 1 };
 }
@@ -147,20 +141,20 @@ Vec3 Car::wheel_direction(uint16_t i, int32_t *speed, int32_t prev_edx)
     switch (i) {
     case 0:
     case 1:
-        if (!(wheel_dirs.valid & 1)) {
+        if (!(wheel_dirs_cache.valid & 1)) {
             compute_steered_dir();
-            wheel_dirs.valid |= 1;
+            wheel_dirs_cache.valid |= 1;
         }
         *speed = wheel_speed[i];
-        return wheel_dirs.steered;
+        return wheel_dirs_cache.steered;
     case 2:
     case 3:
-        if (!(wheel_dirs.valid & 2)) {
-            wheel_dirs.straight = axis_y();
-            wheel_dirs.valid |= 2;
+        if (!(wheel_dirs_cache.valid & 2)) {
+            wheel_dirs_cache.straight = axis_y();
+            wheel_dirs_cache.valid |= 2;
         }
         *speed = wheel_speed[i];
-        return wheel_dirs.straight;
+        return wheel_dirs_cache.straight;
     default:
         *speed = prev_edx;
         return { 0, 0, 0 };
@@ -188,7 +182,7 @@ void Car::update_mid()
     mid[0] = (int16_t)((v[4].pos.x.units() >> 1) + (v[6].pos.x.units() >> 1));
     mid[1] = (int16_t)((v[4].pos.y.units() >> 1) + (v[6].pos.y.units() >> 1));
     mid[2] = (int16_t)((v[4].pos.z.units() >> 1) + (v[6].pos.z.units() >> 1));
-    wheel_dirs.valid = 0;
+    wheel_dirs_cache.valid = 0;
 }
 
 /* ------------------------------------------------------------------------

@@ -32,7 +32,10 @@ g++ 15+ or clang++ 19+. Tested on Linux x86-64 with both. The code does not depe
 size, but it has not been tested on 32 bits. Physics runs at 120 Hz and the display at 60 Hz, as
 in the Win16 port. The window opens at the size of the picture at the chosen scale (`-s`),
 enlarged to at least 960x600 and reduced by a whole factor if it does not fit on the screen.
-Esc quits.
+Esc quits; in a game started from the track chooser it goes back to the chooser, where another
+track (or other options) can be picked. Each game starts from scratch: `game_init` resets
+everything the game keeps outside the data segment, and the host makes a new data segment and new
+segments (`host_free_game`).
 
 Sound: the game writes the AdLib (OPL2) registers as the original did to ports 388h/389h
 (`src/sound.cpp`: an engine voice per view and the crash effect); the SDL host plays them through
@@ -232,7 +235,9 @@ Results:
 `make test` repeats the scenario and random script 1 and compares them with the recorded
 references. It also runs the scenario with car 1 given a synthetic model that uses every opcode
 of the bytecode (`tools/synth_model.py`, built from the track's own car file, so it is not stored
-in the repository); the demo's cars only use six of them.
+in the repository); the demo's cars only use six of them. It also plays 300 frames on another track, frees everything and then
+runs the scenario again in the same process (`terep2-headless -p track:frames`), which has to give
+the same output as a fresh process.
 
 ## Things found along the way
 

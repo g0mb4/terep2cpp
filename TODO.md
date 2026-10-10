@@ -10,10 +10,7 @@
       Depende dos dois primeiros itens.
 - [ ] `make test` mais completo: os 12 roteiros, teste rápido em 4x com ASan/UBSan, build com
       g++ e clang; CI no GitHub Actions.
-- [ ] Carregar outra pista sem fechar a aplicação (hoje o estado e os segmentos são montados
-      uma vez só no `game_init`).
 - [x] Corrigir o bug do pulo que corrompe o título (o carro procura o ponto mais baixo como
       num aperto novo). Os bugs do renderizador ficam como estão.
 
-Fora do escopo daqui: som (feito em outro branch, só adaptar), widescreen (só no renderizador
-novo).
+Fora do escopo daqui: widescreen (só no renderizador novo).

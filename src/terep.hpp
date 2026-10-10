@@ -241,6 +241,12 @@ struct Car {
     void jump(bool keep_point);
 
 private:
+    struct {                        /* rolling directions, computed once per tick (update_mid clears it) */
+        unsigned valid;             /* bit 0: steered, bit 1: straight (orig 1000:0e67) */
+        Vec3     steered;           /* orig 1000:12a7 */
+        Vec3     straight;          /* orig 1000:12bf */
+    } wheel_dirs_cache = {};
+
     void update_mid();
     void ground_contact(CarVertex &v, uint16_t index);
     Vec3 wheel_direction(uint16_t i, int32_t *speed, int32_t prev_edx);
@@ -344,7 +350,6 @@ int16_t  ground_probe(uint16_t x, uint16_t y);
 void     physics_tick();
 
 /* raster.cpp */
-extern const uint8_t *raster_texture;   /* texture for draw_textured */
 void     clear_screen();
 void     put_pixel(int16_t x, int16_t y, uint8_t color);
 void     put_block(int16_t x, int16_t y, uint8_t color);    /* render_scale x render_scale pixels */
@@ -355,13 +360,13 @@ uint16_t poly_end(const ProjVertex &p, uint32_t attr);
 bool     poly_backfacing();
 void     draw_flat();
 void     draw_shaded();
-void     draw_textured();
+void     draw_textured(const uint8_t *tex);     /* tex: the original's FS segment */
 
 /* scene.cpp */
 extern bool poly_hidden;                /* result of the last facing test */
 bool     view_transform(int16_t x, int16_t y, int16_t z, ProjVertex *out);
 bool     view_transform_fine(Vec3 d, ProjVertex *out);  /* d: 16.16 map units from the eye */
-void     draw_sprite(int16_t sx, int16_t sy, int16_t depth, const SpriteQuad &q);
+void     draw_sprite(int16_t sx, int16_t sy, int16_t depth, const SpriteQuad &q, const uint8_t *tex);
 void     draw_terrain();
 void     draw_particles();
 
@@ -385,7 +390,8 @@ uint16_t car_read(Car &car, FILE *f);
 FILE    *data_fopen(const char *name);  /* provided by the host: open a track file for reading */
 
 /* game.cpp */
-int      game_init();
+void     game_frame_reset();
+int      game_init();                   /* also to start again (new track): the host makes a new G first */
 int      game_frame();
 void     game_key(uint8_t scancode);
 

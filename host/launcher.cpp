@@ -20,6 +20,8 @@ namespace fs = std::filesystem;
 
 namespace {
 
+constexpr Uint32 ESC_GRACE_MS = 300;    // Esc does not close the chooser this soon after it opens
+                                        // (an Esc pressed twice to leave a game)
 constexpr int PREVIEW_MIN_W = 320, PREVIEW_MAX_W = 960;    // rendered size; shown larger if needed
 constexpr float LIST_SHARE = 0.36f;                         // of the window width, for the directories
 
@@ -42,7 +44,19 @@ bool playable(const std::string &dir)
 
 class Launcher {
 public:
-    Launcher(SDL_Renderer *ren, bool *no_sound) : ren(ren), no_sound(no_sound) { enter(fs::current_path()); }
+    // Starts where the last track was chosen, with it selected; else in the current directory.
+    Launcher(SDL_Renderer *ren, bool *no_sound, const std::string &last) : ren(ren), no_sound(no_sound)
+    {
+        if (last.empty()) {
+            enter(fs::current_path());
+            return;
+        }
+        fs::path track(last);
+        enter(track.parent_path());
+        for (int i = 0; i < (int)entries.size(); i++)
+            if (entries[i].name == track.filename().string())
+                select(i);
+    }
     ~Launcher() { SDL_DestroyTexture(preview_tex); }
 
     // One frame of the UI; true once a track was chosen.
@@ -213,15 +227,16 @@ bool launcher_run(SDL_Window *win, SDL_Renderer *ren, std::string *track, bool *
     ImGui_ImplSDL2_InitForSDLRenderer(win, ren);
     ImGui_ImplSDLRenderer2_Init(ren);
 
-    extra_options.fix_ice_bug = true;           // offered on here; the game alone stays faithful
+    const Uint32 opened = SDL_GetTicks();
     bool chosen = false, quit = false;
     {
-        Launcher ui(ren, no_sound);
+        Launcher ui(ren, no_sound, *track);
         while (!chosen && !quit) {
             SDL_Event e;
             while (SDL_PollEvent(&e)) {
                 ImGui_ImplSDL2_ProcessEvent(&e);
-                if (e.type == SDL_QUIT || (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE))
+                bool esc = e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE && !e.key.repeat;
+                if (e.type == SDL_QUIT || (esc && SDL_GetTicks() - opened >= ESC_GRACE_MS))
                     quit = true;
             }
             ImGui_ImplSDLRenderer2_NewFrame();

@@ -11,8 +11,6 @@
 #include <utility>
 #include "terep.hpp"
 
-/* Texture used by draw_textured (the original's FS segment). */
-const uint8_t *raster_texture;
 
 int      render_scale = 1;
 uint8_t *hires_screen;
@@ -349,7 +347,7 @@ void draw_shaded()
 /* Texture-mapped polygon (affine), attributes u, v in 8.8 texels of a
  * 256-wide texture.  Texel 0xff is transparent, 0xf0..0xfe darken what is
  * behind through the shade table.  orig 1000:36fe / 1000:3827 */
-void draw_textured()
+void draw_textured(const uint8_t *tex)
 {
     if (!scan_outline(2))
         return;
@@ -364,7 +362,6 @@ void draw_textured()
         return;
     uint8_t *scr = screen();
     const uint32_t m = pixel_mask();
-    const uint8_t *tex = raster_texture;
     for (int16_t y = G->span_top; rows >= 0; rows--, y++) {
         int16_t u0 = span_a()[y].left, du = (int16_t)(span_a()[y].right - u0);
         int16_t v0 = span_b()[y].left, dv = (int16_t)(span_b()[y].right - v0);

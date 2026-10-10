@@ -6,16 +6,20 @@
  * written back into the segment first (car_image.cpp), where the original
  * keeps them.
  *
- *   terep2-headless [-s scale] [-E option]... trackdir frames [script] [ppmdir]
+ *   terep2-headless [-s scale] [-E option]... [-p track:frames] trackdir frames [script] [ppmdir]
  *
  * -E option, --extra-options option: turn on an extra option (see extra_option_list),
  * such as a fix of a bug of the original, or "all".
  *
+ * -p track:frames: first play that many frames of the script on another
+ * track (without output), then free everything and start the real run in
+ * the same process; it must give the same output as a fresh process.
  * script: comma separated frame:scancode pairs (scancode | 0x80 = release)
  * ppmdir: write each frame as fNNNN.ppm there (only frame n with DUMP_FRAME=n)
  */
 #include <climits>
 #include <cstdlib>
+#include <string>
 #include <string_view>
 #include <unistd.h>
 #include "../host/host.hpp"
@@ -45,24 +49,58 @@ static void write_ppm(const char *path)
     fclose(f);
 }
 
+// The keys of the script for frame fr.
+static void script_keys(const char *script, int fr)
+{
+    for (const char *s = script; *s;) {
+        int f, sc, used;
+        if (sscanf(s, "%d:%i%n", &f, &sc, &used) != 2)
+            break;
+        if (f == fr)
+            game_key((uint8_t)sc);
+        s += used;
+        while (*s == ',')
+            s++;
+    }
+}
+
+// A game on track, from a new data segment; the current directory is restored.
+static bool start_game(const char *track)
+{
+    char here[PATH_MAX];
+    if (!getcwd(here, sizeof here) || !host_init_dataseg())
+        return false;
+    if (chdir(track) != 0) {
+        perror(track);
+        return false;
+    }
+    bool ok = game_init() == 0 && car_files_read();
+    if (!ok)
+        fprintf(stderr, "init failed\n");
+    return chdir(here) == 0 && ok;
+}
+
 int main(int argc, char **argv)
 {
     int a = 1;
+    const char *pre = nullptr;
     for (; a + 1 < argc && argv[a][0] == '-'; a += 2) {
         std::string_view opt = argv[a];
         if (opt == "-s")
             render_scale = atoi(argv[a + 1]);
+        else if (opt == "-p")
+            pre = argv[a + 1];
         else if ((opt == "-E" || opt == "--extra-options") && !extra_option_enable(argv[a + 1])) {
             fprintf(stderr, "unknown option %s; known:", argv[a + 1]);
             for (int i = 0; i < extra_option_count; i++)
                 fprintf(stderr, " %s", extra_option_list[i].name);
             fprintf(stderr, " all\n");
             return 2;
-        } else if (opt != "-E" && opt != "--extra-options")
+        } else if (opt != "-E" && opt != "--extra-options" && opt != "-p")
             break;
     }
     if (argc - a < 2 || render_scale < 1 || render_scale > MAX_RENDER_SCALE) {
-        fprintf(stderr, "usage: %s [-s 1..%d] [-E option]... trackdir frames [script] [ppmdir]\n",
+        fprintf(stderr, "usage: %s [-s 1..%d] [-E option]... [-p track:frames] trackdir frames [script] [ppmdir]\n",
                 argv[0], MAX_RENDER_SCALE);
         return 2;
     }
@@ -74,31 +112,28 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (!host_init_dataseg())
-        return 1;
-    if (chdir(track) != 0) {
-        perror(track);
-        return 1;
+    if (pre) {
+        std::string pre_track(pre, strcspn(pre, ":"));
+        int pre_frames = strchr(pre, ':') ? atoi(strchr(pre, ':') + 1) : 0;
+        if (!start_game(pre_track.c_str()))
+            return 1;
+        for (int fr = 0; fr < pre_frames; fr++) {
+            script_keys(script, fr);
+            host_step();
+        }
+        host_free_game();
     }
-    if (game_init() != 0 || !car_files_read()) {
-        fprintf(stderr, "init failed\n");
+
+    if (!start_game(track))
         return 1;
-    }
+    if (chdir(track) != 0)              // the track's files stay at hand, as before
+        return 1;
     printf("cars=%d\n", G->num_cars);
 
     // DUMP_FRAME=n: write only that frame's image
     int only = getenv("DUMP_FRAME") ? atoi(getenv("DUMP_FRAME")) : -1;
     for (int fr = 0; fr < frames; fr++) {
-        for (const char *s = script; *s;) {
-            int f, sc, used;
-            if (sscanf(s, "%d:%i%n", &f, &sc, &used) != 2)
-                break;
-            if (f == fr)
-                game_key((uint8_t)sc);
-            s += used;
-            while (*s == ',')
-                s++;
-        }
+        script_keys(script, fr);
         host_step();                    // Esc is ignored here
         printf("%d %08lx %08lx\n", fr, crc32_buf(screen(), (size_t)screen_w() * screen_h()), ds_masked_crc(dataseg_image()));
         if (*ppmdir && (only < 0 || only == fr)) {

@@ -260,17 +260,17 @@ static void draw_cell(const CellQuad &q, uint8_t color)
     uint32_t uv_s0 = tile_uv(color, sw, !sw);
     uint32_t uv_s1 = tile_uv(color, true, true);
 
-    raster_texture = seg_ptr(G->seg_maptex);
+    const uint8_t *tex = seg_ptr(G->seg_maptex);
     poly_begin(q.d1, uv_d1);
     poly_add(q.d0, uv_d0);
     poly_add(q.s0, uv_s0);
     if (cell_visible(q, poly_end(q.d1, uv_d1)))
-        draw_textured();
+        draw_textured(tex);
     poly_begin(q.d1, uv_d1);
     poly_add(q.s0, uv_s0);
     poly_add(q.s1, uv_s1);
     if (cell_visible(q, poly_end(q.d1, uv_d1)))
-        draw_textured();
+        draw_textured(tex);
 }
 
 static void draw_cars_in_cell(uint16_t cell)
@@ -411,7 +411,7 @@ void draw_terrain()
 
 /* A camera-facing square of the given world size.  orig 1000:0cd3 and
  * model opcode 9 */
-void draw_sprite(int16_t sx, int16_t sy, int16_t depth, const SpriteQuad &q)
+void draw_sprite(int16_t sx, int16_t sy, int16_t depth, const SpriteQuad &q, const uint8_t *tex)
 {
     int16_t h = screen_clamp(q.size * render_scale / depth);
     const uint32_t *uv = q.uv;
@@ -424,14 +424,14 @@ void draw_sprite(int16_t sx, int16_t sy, int16_t depth, const SpriteQuad &q)
         o[i].b = (uint16_t)(uv[i] >> 16);
     }
     G->poly_buf[0].count = 4;
-    draw_textured();
+    draw_textured(tex);
 }
 
 /* Smoke and debris: textured squares, only where the terrain is visible.
  * orig 1000:0b25 */
 void draw_particles()
 {
-    raster_texture = seg_ptr(G->seg_textures);
+    const uint8_t *tex = seg_ptr(G->seg_textures);
     for (uint16_t i = 0; i < G->particle_bytes / sizeof(Particle); i++) {
         const Particle &p = G->particles[i];
         uint8_t a = p.pos.x.cell(), b = p.pos.y.cell();
@@ -448,6 +448,6 @@ void draw_particles()
         if (!in_front)
             continue;
         const SpriteQuad &quad = *reinterpret_cast<const SpriteQuad *>(ds_ptr(G->smoke_sprite[(uint8_t)p.kind >> 4]));
-        draw_sprite(v.sx, v.sy, v.y, quad);
+        draw_sprite(v.sx, v.sy, v.y, quad, tex);
     }
 }
