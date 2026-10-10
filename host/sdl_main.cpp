@@ -2,7 +2,7 @@
  * SDL2 host: a window, the keyboard and the original timing (physics at
  * 120 Hz, display at 60 Hz, as in the Win16 port).
  *
- *   terep2 [-s scale] [-E option]... [trackdir]
+ *   terep2 [-s scale] [-E option]... [-n] [trackdir]
  *
  * Without trackdir a chooser opens first (launcher.cpp), starting in the
  * current directory, with the scale and the extra options as given here.
@@ -11,7 +11,9 @@
  * -E option, --extra-options option: turn on an extra option (see extra_option_list),
  * such as a fix of a bug of the original, or "all".
  *
- * Esc quits.  The AdLib sound is not played.
+ * -n, --no-sound: no sound (the AdLib emulator is not started).
+ *
+ * Esc quits.
  */
 #include <cstdlib>
 #include <string>
@@ -21,6 +23,7 @@
 #include <SDL.h>
 #include "host.hpp"
 #include "launcher.hpp"
+#include "opl_sound.hpp"
 
 constexpr int MIN_ZOOM = 3;                // a 320x200 picture opens at least this many times bigger
 
@@ -95,21 +98,25 @@ int main(int argc, char **argv)
 {
     std::string track;
     int a = 1;
-    bool scale_given = false;
-    for (; a + 1 < argc && argv[a][0] == '-'; a += 2) {
+    bool scale_given = false, no_sound = false;
+    for (; a < argc && argv[a][0] == '-'; a++) {
         std::string_view opt = argv[a];
-        if (opt == "-s") {
-            render_scale = atoi(argv[a + 1]);
+        if (opt == "-n" || opt == "--no-sound") {
+            no_sound = true;
+        } else if (opt == "-s" && a + 1 < argc) {
+            render_scale = atoi(argv[++a]);
             scale_given = true;
-        }
-        else if ((opt == "-E" || opt == "--extra-options") && !extra_option_enable(argv[a + 1])) {
-            fprintf(stderr, "unknown option %s; known:", argv[a + 1]);
-            for (int i = 0; i < extra_option_count; i++)
-                fprintf(stderr, " %s", extra_option_list[i].name);
-            fprintf(stderr, " all\n");
-            return 2;
-        } else if (opt != "-E" && opt != "--extra-options")
+        } else if ((opt == "-E" || opt == "--extra-options") && a + 1 < argc) {
+            if (!extra_option_enable(argv[++a])) {
+                fprintf(stderr, "unknown option %s; known:", argv[a]);
+                for (int i = 0; i < extra_option_count; i++)
+                    fprintf(stderr, " %s", extra_option_list[i].name);
+                fprintf(stderr, " all\n");
+                return 2;
+            }
+        } else {
             break;
+        }
     }
     if (a < argc)
         track = argv[a];
@@ -135,7 +142,7 @@ int main(int argc, char **argv)
     if (track.empty()) {
         if (!scale_given)
             render_scale = 3;                       // the chooser starts at 3x
-        if (!launcher_run(win, ren, &track)) {
+        if (!launcher_run(win, ren, &track, &no_sound)) {
             SDL_Quit();
             return 0;
         }
@@ -144,6 +151,8 @@ int main(int argc, char **argv)
         SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     }
 
+    if (!no_sound)
+        opl_sound_start();                          // before game_init, which sets up the AdLib
     if (!host_init_dataseg())
         return 1;
     if (chdir(track.c_str()) != 0) {
@@ -199,6 +208,7 @@ int main(int argc, char **argv)
             SDL_Delay(1);
         }
     }
+    opl_sound_stop();
     SDL_Quit();
     return 0;
 }

@@ -8,5 +8,6 @@
 // Runs until the player picks a track (true, *track set) or closes the
 // window (false).  Starts browsing in the current directory.  render_scale
 // and extra_options (see terep.hpp) are edited in place, so values given on the
-// command line show up as the initial ones.
-bool launcher_run(SDL_Window *win, SDL_Renderer *ren, std::string *track);
+// command line show up as the initial ones; so does *no_sound (the host's
+// "Disable sound").
+bool launcher_run(SDL_Window *win, SDL_Renderer *ren, std::string *track, bool *no_sound);

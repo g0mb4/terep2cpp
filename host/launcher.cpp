@@ -42,7 +42,7 @@ bool playable(const std::string &dir)
 
 class Launcher {
 public:
-    explicit Launcher(SDL_Renderer *ren) : ren(ren) { enter(fs::current_path()); }
+    Launcher(SDL_Renderer *ren, bool *no_sound) : ren(ren), no_sound(no_sound) { enter(fs::current_path()); }
     ~Launcher() { SDL_DestroyTexture(preview_tex); }
 
     // One frame of the UI; true once a track was chosen.
@@ -50,6 +50,7 @@ public:
 
 private:
     SDL_Renderer *ren;
+    bool *no_sound;
     SDL_Texture *preview_tex = nullptr;
     int tex_w = 0, tex_h = 0;
     std::vector<uint32_t> pixels;
@@ -177,6 +178,9 @@ bool Launcher::frame(std::string *track)
 
     ImGui::SeparatorText("Misc options");
     float wrap = ImGui::GetCursorPosX() + show_w;
+    ImGui::Checkbox("Disable sound", no_sound);
+    ImGui::SameLine();
+    ImGui::TextDisabled("no AdLib emulation at all (Nuked-OPL3)");
     for (int i = 0; i < extra_option_count; i++) {
         ImGui::Checkbox(extra_option_list[i].name, &(extra_options.*extra_option_list[i].flag));
         ImGui::SameLine();
@@ -200,7 +204,7 @@ bool Launcher::frame(std::string *track)
 
 }  // namespace
 
-bool launcher_run(SDL_Window *win, SDL_Renderer *ren, std::string *track)
+bool launcher_run(SDL_Window *win, SDL_Renderer *ren, std::string *track, bool *no_sound)
 {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -212,7 +216,7 @@ bool launcher_run(SDL_Window *win, SDL_Renderer *ren, std::string *track)
     extra_options.fix_ice_bug = true;           // offered on here; the game alone stays faithful
     bool chosen = false, quit = false;
     {
-        Launcher ui(ren);
+        Launcher ui(ren, no_sound);
         while (!chosen && !quit) {
             SDL_Event e;
             while (SDL_PollEvent(&e)) {

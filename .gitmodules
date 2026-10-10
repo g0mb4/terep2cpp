@@ -1,3 +1,6 @@
 [submodule "host/imgui"]
 	path = host/imgui
 	url = https://github.com/ocornut/imgui
+[submodule "host/Nuked-OPL3"]
+	path = host/Nuked-OPL3
+	url = https://github.com/nukeykt/Nuked-OPL3

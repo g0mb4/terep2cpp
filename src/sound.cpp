@@ -1,7 +1,8 @@
 /*
  * AdLib (OPL2) sound: one engine voice per view plus a "hit" effect.
  * The register writes are kept; the host decides what opl_write does
- * (the Win16 port and the test host ignore them).
+ * (the SDL host plays them through an OPL3 emulator, host/opl_sound.cpp;
+ * the test host ignores them).
  */
 #include "terep.hpp"
 
