@@ -24,3 +24,5 @@ maincode_int.asm
 /docs/*.png
 /docs/*.gif
 !/docs/alta_resolucao.gif
+
+.claude
