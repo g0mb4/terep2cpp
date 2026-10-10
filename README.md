@@ -23,7 +23,7 @@ make test       # runs the recorded scenarios and compares them with the referen
 ./terep2        # opens the track chooser, starting in the current directory
 ./terep2 data/Asphalt
 ./terep2 -s 4     # renders at 1280x800 (scale 1 to 8)
-./terep2 -F ice   # turns on an optional fix (-F all: every one), see below
+./terep2 -E fix-ice-bug  # turns on an extra option (-E all: every one), see below
 ```
 
 C++17 with GNU extensions (`__attribute__((packed))`, `-fwrapv` and `#embed`), so it builds with
@@ -37,19 +37,23 @@ Without a track directory, `terep2` first opens a track chooser (Dear ImGui): th
 on the left, starting in the current one (`[map]` marks those with a `map.pcx` and a
 `col.pcx`); on the right a preview of the selected track, its terrain turning, drawn with the
 Comanche "voxel space" technique from `map.pcx` (heights) and `col.pcx` (colour of each cell
-through its palette); below it the render scale and the optional fixes. A click selects a
+through its palette); below it the render scale and the options (`fix-ice-bug` comes ticked
+there, and the scale starts at 3 unless `-s` is given; without the chooser the game stays
+faithful unless `-E` says otherwise, at scale 1 unless `-s` says otherwise). A click selects a
 directory, a double click enters it or plays the track, like the Play button (which needs a
-`car1.dat` too). `-s` and `-F` given on the command line are the initial values. The chooser
+`car1.dat` too). `-s` and `-E` given on the command line are the initial values. The chooser
 lives in `host/` (`launcher.cpp`, `voxel_preview.cpp`, `pcx.cpp`, with its own PCX reader) and
 does not touch the game code.
 
-`-F name` (in both hosts, repeatable) turns on an optional fix of a bug of the original; by
-default the game behaves like the original. The fixes are listed in `fix_list` (`game.cpp`)
-and kept in `fixes`, which the track chooser shows as checkboxes:
+`-E name` (or `--extra-options name`; in both hosts, repeatable, `all` for every one) turns on
+an extra option: a fix of a bug of the original, or another change to what it does. By default
+the game behaves like the original. The options are listed in `extra_option_list` (`game.cpp`)
+and kept in `extra_options`, which the track chooser shows as checkboxes:
 
-| Name | Fix |
+| Name | What it does |
 |---|---|
-| `ice` | broken no longer wraps around to the highest (see below) |
+| `fix-ice-bug` | broken ice no longer wraps around to the highest terrain (see below) |
+| `hide-banner` | hides the "GAMBIARRA FOREVER!" line that the Win16 port draws at the bottom |
 
 ### Higher resolution
 
@@ -242,7 +246,7 @@ Bug of the original that was **fixed**:
   the end of `data.bin`, the corrupted title was not even the same between builds. Now such a
   car looks for its lowest point as on a fresh press, and the jump works.
 
-Bug of the original that can be **fixed on request** (`-F ice`):
+Bug of the original that can be **fixed on request** (`-E fix-ice-bug`):
 
 - **Ice pillars**: an ice chip that lands lowers the heightmap cell under it by one
   (`particles_update`). The height is a byte, so at 0 it wraps around to 255, the highest

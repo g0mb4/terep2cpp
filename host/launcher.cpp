@@ -1,7 +1,7 @@
 /*
  * The track chooser.  Left: the directories of the current one ("..",
  * then the others; tracks are marked).  Right: the selected track turning
- * in a voxel preview, and below it the render scale and the bug fixes.
+ * in a voxel preview, and below it the render scale and the extra options.
  * A click selects a directory, a double click enters it or, if it is a
  * track, starts the game, like the Play button.
  */
@@ -177,11 +177,11 @@ bool Launcher::frame(std::string *track)
 
     ImGui::SeparatorText("Misc options");
     float wrap = ImGui::GetCursorPosX() + show_w;
-    for (int i = 0; i < fix_count; i++) {
-        ImGui::Checkbox(fix_list[i].name, &(fixes.*fix_list[i].flag));
+    for (int i = 0; i < extra_option_count; i++) {
+        ImGui::Checkbox(extra_option_list[i].name, &(extra_options.*extra_option_list[i].flag));
         ImGui::SameLine();
         ImGui::PushTextWrapPos(wrap);
-        ImGui::TextDisabled("%s", fix_list[i].what);
+        ImGui::TextDisabled("%s", extra_option_list[i].what);
         ImGui::PopTextWrapPos();
     }
 
@@ -209,6 +209,7 @@ bool launcher_run(SDL_Window *win, SDL_Renderer *ren, std::string *track)
     ImGui_ImplSDL2_InitForSDLRenderer(win, ren);
     ImGui_ImplSDLRenderer2_Init(ren);
 
+    extra_options.fix_ice_bug = true;           // offered on here; the game alone stays faithful
     bool chosen = false, quit = false;
     {
         Launcher ui(ren);

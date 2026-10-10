@@ -5,19 +5,20 @@
 
 DataSeg *G;
 uint8_t keys[128];                  /* all released (0xff) once game_init ran */
-Fixes fixes;
+ExtraOptions extra_options;
 
-const FixInfo fix_list[] = {
-    { "ice", &Fixes::ice_floor, "Fix the integer underflow that make some broken ice become a huge pillar" },
+const ExtraOptionInfo extra_option_list[] = {
+    { "fix-ice-bug", &ExtraOptions::fix_ice_bug, "Fix the integer underflow that make some broken ice become a huge pillar" },
+    { "hide-banner", &ExtraOptions::hide_banner, "Hide the \"GAMBIARRA FOREVER!\" line added by the Win16 port" },
 };
-const int fix_count = sizeof fix_list / sizeof fix_list[0];
+const int extra_option_count = sizeof extra_option_list / sizeof extra_option_list[0];
 
-bool fix_enable(const char *name)
+bool extra_option_enable(const char *name)
 {
     bool found = false;
-    for (const FixInfo &f : fix_list) {
+    for (const ExtraOptionInfo &f : extra_option_list) {
         if (!strcmp(name, "all") || !strcmp(name, f.name)) {
-            fixes.*f.flag = true;
+            extra_options.*f.flag = true;
             found = true;
         }
     }
@@ -77,7 +78,8 @@ int game_frame()
     set_viewport(0, 0x50, 0xc7);
     draw_text(G->title_text, 10, 10, 15);
     draw_text(G->subtitle_text, 100, 190, 15);
-    draw_text(port_banner, 5, 190, (uint8_t)(banner_color >> 2));
+    if (!extra_options.hide_banner)
+        draw_text(port_banner, 5, 190, (uint8_t)(banner_color >> 2));
     banner_color++;
 
     /* numeric keypad: chase camera height (+ -) and distance (/ *) */

@@ -6,9 +6,10 @@
  * written back into the segment first (car_image.cpp), where the original
  * keeps them.
  *
- *   terep2-headless [-s scale] [-F fix]... trackdir frames [script] [ppmdir]
+ *   terep2-headless [-s scale] [-E option]... trackdir frames [script] [ppmdir]
  *
- * -F fix: turn on a fix of a bug of the original (see fix_list), or "all".
+ * -E option, --extra-options option: turn on an extra option (see extra_option_list),
+ * such as a fix of a bug of the original, or "all".
  *
  * script: comma separated frame:scancode pairs (scancode | 0x80 = release)
  * ppmdir: write each frame as fNNNN.ppm there (only frame n with DUMP_FRAME=n)
@@ -51,17 +52,17 @@ int main(int argc, char **argv)
         std::string_view opt = argv[a];
         if (opt == "-s")
             render_scale = atoi(argv[a + 1]);
-        else if (opt == "-F" && !fix_enable(argv[a + 1])) {
-            fprintf(stderr, "unknown fix %s; known:", argv[a + 1]);
-            for (int i = 0; i < fix_count; i++)
-                fprintf(stderr, " %s", fix_list[i].name);
+        else if ((opt == "-E" || opt == "--extra-options") && !extra_option_enable(argv[a + 1])) {
+            fprintf(stderr, "unknown option %s; known:", argv[a + 1]);
+            for (int i = 0; i < extra_option_count; i++)
+                fprintf(stderr, " %s", extra_option_list[i].name);
             fprintf(stderr, " all\n");
             return 2;
-        } else if (opt != "-F")
+        } else if (opt != "-E" && opt != "--extra-options")
             break;
     }
     if (argc - a < 2 || render_scale < 1 || render_scale > MAX_RENDER_SCALE) {
-        fprintf(stderr, "usage: %s [-s 1..%d] [-F fix]... trackdir frames [script] [ppmdir]\n",
+        fprintf(stderr, "usage: %s [-s 1..%d] [-E option]... trackdir frames [script] [ppmdir]\n",
                 argv[0], MAX_RENDER_SCALE);
         return 2;
     }
