@@ -181,7 +181,7 @@ static uint16_t &ds_word(size_t ofs)
  * every 256 units of x.  The name tables hold 5 entries; a sixth car would
  * take its name from the bytes after them.  car_ofs still records where
  * the original would have put each car in car_pool (back to back), which
- * cars_to_dataseg uses. */
+ * the test host uses (host_test/car_image.cpp). */
 static void load_cars()
 {
     G->num_cars = 0;

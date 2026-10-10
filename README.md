@@ -95,16 +95,19 @@ src/            the game (no OS or library dependencies)
   car_draw.cpp  car vertex transform and the model interpreter (bytecode)
   text.cpp      bitmap font
   sound.cpp     AdLib registers (the host decides what to do with them)
-  car_file.cpp  the carN.dat format: car_read, car_write
+  car_file.cpp  the carN.dat format: car_read
   load.cpp      PCX, map, fog/translucency tables, cars, game_init
   game.cpp      one frame (views, text, keys) and the keyboard
 host/
   host.hpp      what the hosts share
   common.cpp    64 KB segments, creating the data segment, time step, case-insensitive file opening
-  headless.cpp  test host: runs N frames with scripted keys and prints CRCs
   sdl_main.cpp  SDL2 host
+host_test/      the test host (terep2-headless)
+  main.cpp      runs N frames with scripted keys and prints CRCs
+  car_image.cpp the cars written back into the data segment in the original's format, for comparing
+  dsmask.h      what the data segment CRC leaves out (shared with the oracles)
 data/           the Asphalt track and data.bin (the original's data segment, only for the oracles)
-tests/          run_tests.sh, data segment mask and references (ref/*.txt = keys, *.crc)
+tests/          run_tests.sh and references (ref/*.txt = keys, *.crc)
 tools/          oracles used for verification (below), dataseg.hpp generator, script generator
 ```
 
@@ -158,11 +161,12 @@ The original copies the whole `carN.dat` into the segment and uses the file as t
 itself: the header holds the state (steering, throttle, wheels...), the points and springs are
 read by offset and the model is a program whose counter is an offset in the segment. Here
 `car_read` (`src/car_file.cpp`) parses the file into a `Car` with `std::vector`s of points and
-springs, the model's bytes and the model decoded (`model_decode`: one `ModelOp` per instruction,
-the program counter becomes an index into that list). `car_write` goes
-the other way, and `cars_to_dataseg` builds a copy of the segment with the cars where the original
-would have them; the test host computes the CRC over that copy, so the comparison with the
-original is still byte for byte. The title bug was fixed in `Car::jump`.
+springs and the model decoded (`model_decode`: one `ModelOp` per instruction, the program
+counter becomes an index into that list). The game keeps nothing else of the file. The test host
+goes the other way (`host_test/car_image.cpp`): it writes each `Car` back in the file format,
+taking the model's bytes and an unknown header word from the file again, into a copy of the
+segment where the original would have the cars (`car_ofs`), and computes the CRC over that copy,
+so the comparison with the original is still byte for byte. The title bug was fixed in `Car::jump`.
 
 The initial contents of the segment, which the original read from `data.bin`, are written by
 `dataseg_init()` (`src/dataseg_init.cpp`): texts and file names as strings, the font read from
@@ -185,7 +189,7 @@ Two oracles, both in `tools/`:
   `bash tools/build_oracle.sh build/`.
 
 All of them print, per frame, the CRC32 of the framebuffer and of the data segment (with
-`tests/dsmask.h` masking only register garbage that the original leaves in scratch variables).
+`host_test/dsmask.h` masking only register garbage that the original leaves in scratch variables).
 Results:
 
 - a 600-frame scenario that goes through every key (`tools/cenario.py`): new =

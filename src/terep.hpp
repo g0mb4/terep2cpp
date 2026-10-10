@@ -148,8 +148,8 @@ struct PACKED PcxHeader {
  * A carN.dat file is a fixed header followed by three sections: the mass
  * points, the springs and the model (a small drawing program, see
  * car_draw.cpp).  The original copied the file into the data segment and
- * used it in place; here car_file.cpp reads it into a Car and car_write
- * gives the original bytes back (the tests compare those).
+ * used it in place; here car_file.cpp reads it into a Car (the test host
+ * writes the original bytes back to compare them, host_test/car_image.cpp).
  * ------------------------------------------------------------------------- */
 
 enum ModelOpcode : uint8_t;         /* the opcodes (car_draw.cpp) */
@@ -207,8 +207,7 @@ struct Car {
 
     std::vector<CarVertex> points;
     std::vector<CarSpring> spring_list;
-    std::vector<uint8_t>   model;   /* the drawing program, as in the file */
-    std::vector<ModelOp>   model_ops;   /* the same, decoded (model_decode) */
+    std::vector<ModelOp>   model_ops;   /* the drawing program, decoded (model_decode) */
 
     uint16_t drive = REAR;          /* Drive (from the file) */
     Angle    steer = {};            /* current steering angle, +-45 deg */
@@ -223,7 +222,6 @@ struct Car {
     int      lowest = -1;           /* vertex pushed by the "jump" keys, -1 before the first push */
     int32_t  wheel_speed[4] = {};   /* angular speed of each wheel */
     int32_t  spin[12] = {};         /* further per-wheel state, decays with the speeds */
-    uint16_t unk_06 = 0;            /* header word of unknown use, kept for car_write */
 
     CarVertex *vertices() { return points.data(); }
     uint16_t   vertex_count() const { return (uint16_t)points.size(); }
@@ -380,8 +378,6 @@ void     draw_text(const char *s, int16_t x, int16_t y, uint8_t color);
 
 /* car_file.cpp */
 uint16_t car_read(Car &car, FILE *f);
-std::vector<uint8_t> car_write(const Car &car, uint16_t ds_base);
-void     cars_to_dataseg(uint8_t *ds);  /* the cars as the original keeps them, for comparing */
 
 /* load.cpp */
 FILE    *data_fopen(const char *name);  /* provided by the host: open a track file for reading */

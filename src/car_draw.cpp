@@ -50,7 +50,7 @@ static void transform_car(Car &car)
  * Model bytecode
  *
  * The model is a small program in the car file.  A program counter is an
- * offset in car.model (in the original, a data segment offset); all
+ * offset in the model's bytes (in the original, a data segment offset); all
  * operands are 16-bit little-endian unless noted.  Point operands index
  * car_proj.  "hidden" is the result of the last facing test (shared with
  * the terrain code).  Only the low 5 bits of an opcode count.

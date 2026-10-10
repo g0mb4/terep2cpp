@@ -1,8 +1,10 @@
 /*
- * Headless host for tests: runs the game for a number of frames with a
+ * Test host (headless): runs the game for a number of frames with a
  * scripted keyboard and prints, per frame, a CRC of the frame buffer and
  * of the data segment (scratch variables masked), in the same format as
- * tools/oracle so the outputs can be compared directly.
+ * tools/oracle so the outputs can be compared directly.  The cars are
+ * written back into the segment first (car_image.cpp), where the original
+ * keeps them.
  *
  *   terep2-headless [-s scale] [-F fix]... trackdir frames [script] [ppmdir]
  *
@@ -15,8 +17,9 @@
 #include <cstdlib>
 #include <string_view>
 #include <unistd.h>
-#include "host.hpp"
-#include "../tests/dsmask.h"
+#include "../host/host.hpp"
+#include "car_image.hpp"
+#include "dsmask.h"
 
 /* The data segment as the original has it: with the cars in car_pool. */
 static const uint8_t *dataseg_image()
@@ -76,7 +79,7 @@ int main(int argc, char **argv)
         perror(track);
         return 1;
     }
-    if (game_init() != 0) {
+    if (game_init() != 0 || !car_files_read()) {
         fprintf(stderr, "init failed\n");
         return 1;
     }
