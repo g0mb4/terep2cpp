@@ -16,11 +16,12 @@ that corrupts the title) and a crash of the original that the port does not repr
 ## Building and running
 
 ```sh
+git submodule update --init   # Dear ImGui (host/imgui), for the SDL version's track chooser
 make            # terep2-headless: test host, no dependencies
-make sdl        # terep2: playable SDL2 version (needs libsdl2-dev)
+make sdl        # terep2: playable SDL2 version (needs libsdl2-dev and the submodule)
 make test       # runs the recorded scenarios and compares them with the reference
-./terep2        # uses data/Asphalt
-./terep2 other/track
+./terep2        # opens the track chooser, starting in the current directory
+./terep2 data/Asphalt
 ./terep2 -s 4     # renders at 1280x800 (scale 1 to 8)
 ./terep2 -F ice   # turns on an optional fix (-F all: every one), see below
 ```
@@ -32,9 +33,19 @@ in the Win16 port. The window opens at the size of the picture at the chosen sca
 enlarged to at least 960x600 and reduced by a whole factor if it does not fit on the screen.
 Esc quits.
 
+Without a track directory, `terep2` first opens a track chooser (Dear ImGui): the directories
+on the left, starting in the current one (`[track]` marks those with a `map.pcx` and a
+`col.pcx`); on the right a preview of the selected track, its terrain turning, drawn with the
+Comanche "voxel space" technique from `map.pcx` (heights) and `col.pcx` (colour of each cell
+through its palette); below it the render scale and the optional fixes. A click selects a
+directory, a double click enters it or plays the track, like the Play button (which needs a
+`car1.dat` too). `-s` and `-F` given on the command line are the initial values. The chooser
+lives in `host/` (`launcher.cpp`, `voxel_preview.cpp`, `pcx.cpp`, with its own PCX reader) and
+does not touch the game code.
+
 `-F name` (in both hosts, repeatable) turns on an optional fix of a bug of the original; by
 default the game behaves like the original. The fixes are listed in `fix_list` (`game.cpp`)
-and kept in `fixes`, ready to become checkboxes in a settings screen:
+and kept in `fixes`, which the track chooser shows as checkboxes:
 
 | Name | Fix |
 |---|---|
@@ -102,6 +113,10 @@ host/
   host.hpp      what the hosts share
   common.cpp    64 KB segments, creating the data segment, time step, case-insensitive file opening
   sdl_main.cpp  SDL2 host
+  launcher.cpp  track chooser (Dear ImGui) shown when no track is given
+  voxel_preview.cpp  the chooser's preview: the track's terrain in voxel space
+  pcx.cpp       PCX reader for the preview (separate from the game's)
+  imgui/        Dear ImGui (git submodule)
 host_test/      the test host (terep2-headless)
   main.cpp      runs N frames with scripted keys and prints CRCs
   car_image.cpp the cars written back into the data segment in the original's format, for comparing

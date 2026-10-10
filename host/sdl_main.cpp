@@ -2,7 +2,10 @@
  * SDL2 host: a window, the keyboard and the original timing (physics at
  * 120 Hz, display at 60 Hz, as in the Win16 port).
  *
- *   terep2 [-s scale] [-F fix]... [trackdir]      (default: data/Asphalt)
+ *   terep2 [-s scale] [-F fix]... [trackdir]
+ *
+ * Without trackdir a chooser opens first (launcher.cpp), starting in the
+ * current directory, with the scale and the fixes as given here.
  *
  * scale: render at 320*scale x 200*scale (1 = the original picture).
  * -F fix: turn on a fix of a bug of the original (see fix_list), or "all".
@@ -10,11 +13,13 @@
  * Esc quits.  The AdLib sound is not played.
  */
 #include <cstdlib>
+#include <string>
 #include <string_view>
 #include <unistd.h>
 #include <vector>
 #include <SDL.h>
 #include "host.hpp"
+#include "launcher.hpp"
 
 constexpr int MIN_ZOOM = 3;                // a 320x200 picture opens at least this many times bigger
 
@@ -87,7 +92,7 @@ static uint8_t pc_scancode(SDL_Scancode s)
 
 int main(int argc, char **argv)
 {
-    const char *track = "data/Asphalt";
+    std::string track;
     int a = 1;
     for (; a + 1 < argc && argv[a][0] == '-'; a += 2) {
         std::string_view opt = argv[a];
@@ -109,23 +114,13 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (!host_init_dataseg())
-        return 1;
-    if (chdir(track) != 0) {
-        perror(track);
-        return 1;
-    }
-    if (game_init() != 0 || G->num_cars <= 0) {
-        fprintf(stderr, "could not load the track in %s (no car1.dat?)\n", track);
-        return 1;
-    }
-
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
         fprintf(stderr, "SDL: %s\n", SDL_GetError());
         return 1;
     }
-    int win_w, win_h;
-    window_size(&win_w, &win_h);
+    int win_w = 320 * MIN_ZOOM, win_h = 200 * MIN_ZOOM;
+    if (!track.empty())
+        window_size(&win_w, &win_h);
     SDL_Window *win = SDL_CreateWindow("Terep2", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                        win_w, win_h, SDL_WINDOW_RESIZABLE);
     SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_PRESENTVSYNC);
@@ -133,6 +128,27 @@ int main(int argc, char **argv)
         fprintf(stderr, "SDL: %s\n", SDL_GetError());
         return 1;
     }
+    if (track.empty()) {
+        if (!launcher_run(win, ren, &track)) {
+            SDL_Quit();
+            return 0;
+        }
+        window_size(&win_w, &win_h);                // for the scale chosen there
+        SDL_SetWindowSize(win, win_w, win_h);
+        SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    }
+
+    if (!host_init_dataseg())
+        return 1;
+    if (chdir(track.c_str()) != 0) {
+        perror(track.c_str());
+        return 1;
+    }
+    if (game_init() != 0 || G->num_cars <= 0) {
+        fprintf(stderr, "could not load the track in %s (no car1.dat?)\n", track.c_str());
+        return 1;
+    }
+
     const int w = screen_w(), h = screen_h();
     SDL_RenderSetLogicalSize(ren, w, h);
     SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, w, h);

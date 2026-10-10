@@ -1,0 +1,237 @@
+/*
+ * The track chooser.  Left: the directories of the current one ("..",
+ * then the others; tracks are marked).  Right: the selected track turning
+ * in a voxel preview, and below it the render scale and the bug fixes.
+ * A click selects a directory, a double click enters it or, if it is a
+ * track, starts the game, like the Play button.
+ */
+#include <algorithm>
+#include <cstdint>
+#include <filesystem>
+#include <vector>
+#include "imgui.h"
+#include "imgui_impl_sdl2.h"
+#include "imgui_impl_sdlrenderer2.h"
+#include "host.hpp"
+#include "launcher.hpp"
+#include "voxel_preview.hpp"
+
+namespace fs = std::filesystem;
+
+namespace {
+
+constexpr int PREVIEW_MIN_W = 320, PREVIEW_MAX_W = 960;    // rendered size; shown larger if needed
+constexpr float LIST_SHARE = 0.36f;                         // of the window width, for the directories
+
+struct Entry {
+    std::string name;
+    bool track;                     // has what the preview needs (map.pcx, col.pcx)
+};
+
+// What a directory holds: enough to preview it, and to play it (the game
+// also needs at least car1.dat).
+bool has_preview_files(const std::string &dir)
+{
+    return !find_file_nocase(dir, "map.pcx").empty() && !find_file_nocase(dir, "col.pcx").empty();
+}
+
+bool playable(const std::string &dir)
+{
+    return has_preview_files(dir) && !find_file_nocase(dir, "car1.dat").empty();
+}
+
+class Launcher {
+public:
+    explicit Launcher(SDL_Renderer *ren) : ren(ren) { enter(fs::current_path()); }
+    ~Launcher() { SDL_DestroyTexture(preview_tex); }
+
+    // One frame of the UI; true once a track was chosen.
+    bool frame(std::string *track);
+
+private:
+    SDL_Renderer *ren;
+    SDL_Texture *preview_tex = nullptr;
+    int tex_w = 0, tex_h = 0;
+    std::vector<uint32_t> pixels;
+    fs::path cwd;
+    std::vector<Entry> entries;
+    int selected = -1;
+    VoxelPreview preview;
+    bool can_play = false;
+    float angle = 0;
+
+    void enter(const fs::path &dir);
+    void select(int i);
+    fs::path selected_path() const { return selected < 0 ? cwd : cwd / entries[selected].name; }
+};
+
+void Launcher::enter(const fs::path &dir)
+{
+    std::error_code ec;
+    fs::path p = fs::canonical(dir, ec);
+    if (ec)
+        return;
+    cwd = p;
+    entries.clear();
+    if (cwd.has_parent_path() && cwd != cwd.root_path())
+        entries.push_back({ "..", false });
+    std::vector<Entry> dirs;
+    for (fs::directory_iterator it(cwd, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end;
+         it.increment(ec)) {
+        std::error_code e2;
+        if (!it->is_directory(e2) || e2)
+            continue;
+        std::string name = it->path().filename().string();
+        if (name.empty() || name[0] == '.')
+            continue;
+        dirs.push_back({ name, has_preview_files(it->path().string()) });
+    }
+    std::sort(dirs.begin(), dirs.end(), [](const Entry &a, const Entry &b) { return a.name < b.name; });
+    entries.insert(entries.end(), dirs.begin(), dirs.end());
+    selected = -1;
+    preview.load(cwd.string());     // the directory itself may be a track
+    can_play = playable(cwd.string());
+}
+
+void Launcher::select(int i)
+{
+    selected = i;
+    std::string dir = selected_path().string();
+    preview.load(dir);
+    can_play = playable(dir);
+}
+
+bool Launcher::frame(std::string *track)
+{
+    bool chosen = false;
+    const ImGuiViewport *vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(vp->WorkPos);
+    ImGui::SetNextWindowSize(vp->WorkSize);
+    ImGui::Begin("Terep2", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                                        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+    // the preview fills the width on the right, 16:9, leaving room for the options below it
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    float show_w = avail.x * (1 - LIST_SHARE) - spacing;
+    float show_h = show_w * 9 / 16;
+    const float options_h = 190;
+    if (show_h > avail.y - options_h) {
+        show_h = avail.y - options_h;
+        show_w = show_h * 16 / 9;
+    }
+    if (show_w < PREVIEW_MIN_W) {
+        show_w = PREVIEW_MIN_W;
+        show_h = show_w * 9 / 16;
+    }
+
+    // left: the directories
+    ImGui::BeginChild("dirs", ImVec2(avail.x - show_w - spacing, 0), ImGuiChildFlags_Borders);
+    ImGui::TextWrapped("%s", cwd.string().c_str());
+    ImGui::Separator();
+    fs::path go;
+    for (int i = 0; i < (int)entries.size(); i++) {
+        const Entry &e = entries[i];
+        std::string label = (e.track ? "[track] " : "        ") + e.name;
+        if (ImGui::Selectable(label.c_str(), selected == i, ImGuiSelectableFlags_AllowDoubleClick)) {
+            if (i != selected)
+                select(i);
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                if (e.name != ".." && can_play)
+                    chosen = true;
+                else
+                    go = cwd / e.name;
+            }
+        }
+    }
+    ImGui::EndChild();
+    if (!go.empty())
+        enter(go);
+
+    // right: preview and options
+    ImGui::SameLine();
+    ImGui::BeginGroup();
+    angle += ImGui::GetIO().DeltaTime * 0.35f;
+    int w = (int)show_w < PREVIEW_MAX_W ? (int)show_w : PREVIEW_MAX_W, h = w * 9 / 16;
+    if (w != tex_w || h != tex_h) {
+        SDL_DestroyTexture(preview_tex);
+        preview_tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, w, h);
+        pixels.resize((size_t)w * h);
+        tex_w = w;
+        tex_h = h;
+    }
+    preview.render(pixels.data(), w, h, angle);
+    SDL_UpdateTexture(preview_tex, nullptr, pixels.data(), w * 4);
+    ImGui::Image((ImTextureID)(intptr_t)preview_tex, ImVec2(show_w, show_h));
+    std::string name = selected_path().filename().string();
+    if (preview.loaded())
+        ImGui::Text("%s%s", name.c_str(), can_play ? "" : "  (no car1.dat: cannot be played)");
+    else
+        ImGui::TextDisabled("%s: no map.pcx and col.pcx", name.c_str());
+
+    ImGui::SeparatorText("Render scale");
+    ImGui::SetNextItemWidth(show_w * 0.5f);
+    ImGui::SliderInt("##scale", &render_scale, 1, MAX_RENDER_SCALE, "%dx");
+    ImGui::SameLine();
+    ImGui::Text("%d x %d%s", screen_w(), screen_h(), render_scale == 1 ? "  (original)" : "");
+
+    ImGui::SeparatorText("Fixes of bugs of the original");
+    float wrap = ImGui::GetCursorPosX() + show_w;
+    for (int i = 0; i < fix_count; i++) {
+        ImGui::Checkbox(fix_list[i].name, &(fixes.*fix_list[i].flag));
+        ImGui::SameLine();
+        ImGui::PushTextWrapPos(wrap);
+        ImGui::TextDisabled("%s", fix_list[i].what);
+        ImGui::PopTextWrapPos();
+    }
+
+    ImGui::Spacing();
+    ImGui::BeginDisabled(!can_play);
+    if (ImGui::Button("Play", ImVec2(120, 0)))
+        chosen = true;
+    ImGui::EndDisabled();
+    ImGui::EndGroup();
+    ImGui::End();
+
+    if (chosen)
+        *track = selected_path().string();
+    return chosen;
+}
+
+}  // namespace
+
+bool launcher_run(SDL_Window *win, SDL_Renderer *ren, std::string *track)
+{
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui::GetIO().IniFilename = nullptr;       // nothing written to the track directories
+    ImGui::StyleColorsDark();
+    ImGui_ImplSDL2_InitForSDLRenderer(win, ren);
+    ImGui_ImplSDLRenderer2_Init(ren);
+
+    bool chosen = false, quit = false;
+    {
+        Launcher ui(ren);
+        while (!chosen && !quit) {
+            SDL_Event e;
+            while (SDL_PollEvent(&e)) {
+                ImGui_ImplSDL2_ProcessEvent(&e);
+                if (e.type == SDL_QUIT || (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE))
+                    quit = true;
+            }
+            ImGui_ImplSDLRenderer2_NewFrame();
+            ImGui_ImplSDL2_NewFrame();
+            ImGui::NewFrame();
+            chosen = ui.frame(track);
+            ImGui::Render();
+            SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+            SDL_RenderClear(ren);
+            ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), ren);
+            SDL_RenderPresent(ren);
+        }
+    }
+    ImGui_ImplSDLRenderer2_Shutdown();
+    ImGui_ImplSDL2_Shutdown();
+    ImGui::DestroyContext();
+    return chosen;
+}
