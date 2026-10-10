@@ -9,7 +9,7 @@ BIN=${1:-./terep2-headless}
 TMP=${TMPDIR:-/tmp}/terep2-test.$$
 fail=0
 
-check() {   # name frames [track]
+check() {   # name frames [map]
     "$BIN" "${3:-data/Asphalt}" "$2" "$(cat tests/ref/$1.txt)" > "$TMP" || { echo "$1: falhou ao rodar"; fail=1; return; }
     if cmp -s "$TMP" "tests/ref/$1.crc"; then
         echo "$1: ok ($2 quadros)"

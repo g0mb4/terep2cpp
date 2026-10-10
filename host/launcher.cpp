@@ -132,7 +132,7 @@ bool Launcher::frame(std::string *track)
     fs::path go;
     for (int i = 0; i < (int)entries.size(); i++) {
         const Entry &e = entries[i];
-        std::string label = (e.track ? "[track] " : "        ") + e.name;
+        std::string label = (e.track ? "[map] " : "      ") + e.name;
         if (ImGui::Selectable(label.c_str(), selected == i, ImGuiSelectableFlags_AllowDoubleClick)) {
             if (i != selected)
                 select(i);
@@ -175,7 +175,7 @@ bool Launcher::frame(std::string *track)
     ImGui::SameLine();
     ImGui::Text("%d x %d%s", screen_w(), screen_h(), render_scale == 1 ? "  (original)" : "");
 
-    ImGui::SeparatorText("Fixes of bugs of the original");
+    ImGui::SeparatorText("Misc options");
     float wrap = ImGui::GetCursorPosX() + show_w;
     for (int i = 0; i < fix_count; i++) {
         ImGui::Checkbox(fix_list[i].name, &(fixes.*fix_list[i].flag));

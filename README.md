@@ -34,7 +34,7 @@ enlarged to at least 960x600 and reduced by a whole factor if it does not fit on
 Esc quits.
 
 Without a track directory, `terep2` first opens a track chooser (Dear ImGui): the directories
-on the left, starting in the current one (`[track]` marks those with a `map.pcx` and a
+on the left, starting in the current one (`[map]` marks those with a `map.pcx` and a
 `col.pcx`); on the right a preview of the selected track, its terrain turning, drawn with the
 Comanche "voxel space" technique from `map.pcx` (heights) and `col.pcx` (colour of each cell
 through its palette); below it the render scale and the optional fixes. A click selects a
@@ -49,7 +49,7 @@ and kept in `fixes`, which the track chooser shows as checkboxes:
 
 | Name | Fix |
 |---|---|
-| `ice` | ice chipped at the lowest height no longer wraps around to the highest (see below) |
+| `ice` | broken no longer wraps around to the highest (see below) |
 
 ### Higher resolution
 

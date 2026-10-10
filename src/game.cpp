@@ -8,7 +8,7 @@ uint8_t keys[128];                  /* all released (0xff) once game_init ran */
 Fixes fixes;
 
 const FixInfo fix_list[] = {
-    { "ice", &Fixes::ice_floor, "ice chipped at the lowest height no longer wraps to the highest" },
+    { "ice", &Fixes::ice_floor, "Fix the integer underflow that make some broken ice become a huge pillar" },
 };
 const int fix_count = sizeof fix_list / sizeof fix_list[0];
 
