@@ -6,13 +6,13 @@
  * written back into the segment first (car_image.cpp), where the original
  * keeps them.
  *
- *   terep2-headless [-s scale] [-E option]... [-p track:frames] trackdir frames [script] [ppmdir]
+ *   terep2-headless [-s scale] [-E option]... [-p map:frames] mapdir frames [script] [ppmdir]
  *
  * -E option, --extra-options option: turn on an extra option (see extra_option_list),
  * such as a fix of a bug of the original, or "all".
  *
- * -p track:frames: first play that many frames of the script on another
- * track (without output), then free everything and start the real run in
+ * -p map:frames: first play that many frames of the script on another
+ * map (without output), then free everything and start the real run in
  * the same process; it must give the same output as a fresh process.
  * script: comma separated frame:scancode pairs (scancode | 0x80 = release)
  * ppmdir: write each frame as fNNNN.ppm there (only frame n with DUMP_FRAME=n)
@@ -64,14 +64,14 @@ static void script_keys(const char *script, int fr)
     }
 }
 
-// A game on track, from a new data segment; the current directory is restored.
-static bool start_game(const char *track)
+// A game on map, from a new data segment; the current directory is restored.
+static bool start_game(const char *map)
 {
     char here[PATH_MAX];
     if (!getcwd(here, sizeof here) || !host_init_dataseg())
         return false;
-    if (chdir(track) != 0) {
-        perror(track);
+    if (chdir(map) != 0) {
+        perror(map);
         return false;
     }
     bool ok = game_init() == 0 && car_files_read();
@@ -100,11 +100,11 @@ int main(int argc, char **argv)
             break;
     }
     if (argc - a < 2 || render_scale < 1 || render_scale > MAX_RENDER_SCALE) {
-        fprintf(stderr, "usage: %s [-s 1..%d] [-E option]... [-p track:frames] trackdir frames [script] [ppmdir]\n",
+        fprintf(stderr, "usage: %s [-s 1..%d] [-E option]... [-p map:frames] mapdir frames [script] [ppmdir]\n",
                 argv[0], MAX_RENDER_SCALE);
         return 2;
     }
-    const char *track = argv[a], *script = argc - a > 2 ? argv[a + 2] : "";
+    const char *map = argv[a], *script = argc - a > 2 ? argv[a + 2] : "";
     int frames = atoi(argv[a + 1]);
     char ppmdir[PATH_MAX] = "";
     if (argc - a > 3 && !realpath(argv[a + 3], ppmdir)) {
@@ -113,9 +113,9 @@ int main(int argc, char **argv)
     }
 
     if (pre) {
-        std::string pre_track(pre, strcspn(pre, ":"));
+        std::string pre_map(pre, strcspn(pre, ":"));
         int pre_frames = strchr(pre, ':') ? atoi(strchr(pre, ':') + 1) : 0;
-        if (!start_game(pre_track.c_str()))
+        if (!start_game(pre_map.c_str()))
             return 1;
         for (int fr = 0; fr < pre_frames; fr++) {
             script_keys(script, fr);
@@ -124,9 +124,9 @@ int main(int argc, char **argv)
         host_free_game();
     }
 
-    if (!start_game(track))
+    if (!start_game(map))
         return 1;
-    if (chdir(track) != 0)              // the track's files stay at hand, as before
+    if (chdir(map) != 0)              // the map's files stay at hand, as before
         return 1;
     printf("cars=%d\n", G->num_cars);
 

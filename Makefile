@@ -20,7 +20,7 @@ terep2-headless: $(GAME) $(HOST) $(TEST) $(HEADERS) $(wildcard host_test/*.hpp) 
 	$(CXX) $(CXXFLAGS) -o $@ $(GAME) $(HOST) $(TEST) -lm
 
 # The SDL host and its track chooser; Dear ImGui is the git submodule in host/imgui.
-SDL_HOST := host/sdl_main.cpp host/launcher.cpp host/voxel_preview.cpp host/pcx.cpp host/opl_sound.cpp
+SDL_HOST := host/sdl_main.cpp host/launcher.cpp host/voxel_preview.cpp host/pcx.cpp host/opl_sound.cpp host/minimap.cpp
 IMGUI    := host/imgui
 IMGUI_OBJ := $(patsubst $(IMGUI)/%.cpp,build/imgui/%.o,$(addprefix $(IMGUI)/,imgui.cpp imgui_draw.cpp \
              imgui_tables.cpp imgui_widgets.cpp backends/imgui_impl_sdl2.cpp backends/imgui_impl_sdlrenderer2.cpp))

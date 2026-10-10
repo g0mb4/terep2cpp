@@ -1,4 +1,4 @@
-// Reading 8-bit PCX images for the host (the track preview).  The game has
+// Reading 8-bit PCX images for the host (the map preview).  The game has
 // its own reader (src/load.cpp), which works on its segments; this one is
 // separate on purpose, so the game code stays as it is.
 #pragma once

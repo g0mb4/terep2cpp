@@ -1,4 +1,4 @@
-// 8-bit, one plane, RLE PCX (what the track files use).
+// 8-bit, one plane, RLE PCX (what the map files use).
 #include <cstdio>
 #include "pcx.hpp"
 

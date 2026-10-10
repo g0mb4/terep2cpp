@@ -2,9 +2,9 @@
  * SDL2 host: a window, the keyboard and the original timing (physics at
  * 120 Hz, display at 60 Hz, as in the Win16 port).
  *
- *   terep2 [-s scale] [-E option]... [-n] [trackdir]
+ *   terep2 [-s scale] [-E option]... [-n] [-m] [mapdir]
  *
- * Without trackdir a chooser opens first (launcher.cpp), starting in the
+ * Without mapdir a chooser opens first (launcher.cpp), starting in the
  * current directory, with the scale and the extra options as given here.
  *
  * scale: render at 320*scale x 200*scale (1 = the original picture).
@@ -12,6 +12,7 @@
  * such as a fix of a bug of the original, or "all".
  *
  * -n, --no-sound: no sound (the AdLib emulator is not started).
+ * -m, --minimap: the map and the cars in the bottom right corner.
  *
  * Esc quits, or goes back to the chooser if the game was started from it.
  */
@@ -24,6 +25,7 @@
 #include <SDL.h>
 #include "host.hpp"
 #include "launcher.hpp"
+#include "minimap.hpp"
 #include "opl_sound.hpp"
 
 constexpr int MIN_ZOOM = 3;                // a 320x200 picture opens at least this many times bigger
@@ -98,12 +100,13 @@ static uint8_t pc_scancode(SDL_Scancode s)
 enum class Ending { BACK, QUIT, FAILED };   // Esc, window closed, could not start
 
 // The game loop: physics at 120 Hz, the picture at 60 Hz.
-static Ending run(SDL_Renderer *ren)
+static Ending run(SDL_Renderer *ren, bool minimap)
 {
     const int w = screen_w(), h = screen_h();
     SDL_RenderSetLogicalSize(ren, w, h);
     SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, w, h);
     std::vector<uint8_t> rgb((size_t)w * h * 3);
+    Minimap *mini = minimap ? new Minimap(ren) : nullptr;
 
     const uint64_t freq = SDL_GetPerformanceFrequency();
     uint64_t next_tick = SDL_GetPerformanceCounter(), next_frame = next_tick;
@@ -140,35 +143,38 @@ static Ending run(SDL_Renderer *ren)
             SDL_UpdateTexture(tex, nullptr, rgb.data(), w * 3);
             SDL_RenderClear(ren);
             SDL_RenderCopy(ren, tex, nullptr, nullptr);
+            if (mini)
+                mini->draw(w, h);
             SDL_RenderPresent(ren);
         } else {
             SDL_Delay(1);
         }
     }
+    delete mini;
     SDL_DestroyTexture(tex);
     return end;
 }
 
-// One game on track, from a fresh data segment, until Esc or the window is
+// One game on map, from a fresh data segment, until Esc or the window is
 // closed; everything it used is freed again.
-static Ending play(SDL_Renderer *ren, const std::string &track, bool no_sound)
+static Ending play(SDL_Renderer *ren, const std::string &map, const HostOptions &host)
 {
     char here[PATH_MAX];
     if (!getcwd(here, sizeof here))
         return Ending::FAILED;
-    if (!no_sound)
+    if (!host.no_sound)
         opl_sound_start();                          // before game_init, which sets up the AdLib
     Ending end = Ending::FAILED;
     if (!host_init_dataseg()) {
         opl_sound_stop();
         return end;
     }
-    if (chdir(track.c_str()) != 0)
-        perror(track.c_str());
+    if (chdir(map.c_str()) != 0)
+        perror(map.c_str());
     else if (game_init() != 0 || G->num_cars <= 0)
-        fprintf(stderr, "could not load the track in %s (no car1.dat?)\n", track.c_str());
+        fprintf(stderr, "could not load the map in %s (no car1.dat?)\n", map.c_str());
     else
-        end = run(ren);
+        end = run(ren, host.minimap);
     opl_sound_stop();
     host_free_game();
     if (chdir(here) != 0)
@@ -178,13 +184,16 @@ static Ending play(SDL_Renderer *ren, const std::string &track, bool no_sound)
 
 int main(int argc, char **argv)
 {
-    std::string track;
+    std::string map;
     int a = 1;
-    bool scale_given = false, no_sound = false;
+    bool scale_given = false;
+    HostOptions host;
     for (; a < argc && argv[a][0] == '-'; a++) {
         std::string_view opt = argv[a];
         if (opt == "-n" || opt == "--no-sound") {
-            no_sound = true;
+            host.no_sound = true;
+        } else if (opt == "-m" || opt == "--minimap") {
+            host.minimap = true;
         } else if (opt == "-s" && a + 1 < argc) {
             render_scale = atoi(argv[++a]);
             scale_given = true;
@@ -201,7 +210,7 @@ int main(int argc, char **argv)
         }
     }
     if (a < argc)
-        track = argv[a];
+        map = argv[a];
     if (render_scale < 1 || render_scale > MAX_RENDER_SCALE) {
         fprintf(stderr, "scale must be 1..%d\n", MAX_RENDER_SCALE);
         return 1;
@@ -211,7 +220,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "SDL: %s\n", SDL_GetError());
         return 1;
     }
-    const bool chooser = track.empty();
+    const bool chooser = map.empty();
     int win_w = 320 * MIN_ZOOM, win_h = 200 * MIN_ZOOM;
     if (!chooser)
         window_size(&win_w, &win_h);
@@ -228,19 +237,19 @@ int main(int argc, char **argv)
         extra_options.fix_ice_bug = true;           // offered on there; the game alone stays faithful
     }
 
-    // Esc in a game started from the chooser goes back to it, for another track
+    // Esc in a game started from the chooser goes back to it, for another map
     for (;;) {
         if (chooser) {
             SDL_RenderSetLogicalSize(ren, 0, 0);
             SDL_SetWindowSize(win, 320 * MIN_ZOOM, 200 * MIN_ZOOM);
             SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-            if (!launcher_run(win, ren, &track, &no_sound))
+            if (!launcher_run(win, ren, &map, &host))
                 break;
             window_size(&win_w, &win_h);            // for the scale chosen there
             SDL_SetWindowSize(win, win_w, win_h);
             SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
         }
-        Ending end = play(ren, track, no_sound);
+        Ending end = play(ren, map, host);
         if (end == Ending::FAILED && !chooser)
             return 1;
         if (end == Ending::QUIT || !chooser)

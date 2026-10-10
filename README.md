@@ -20,11 +20,12 @@ git submodule update --init   # Dear ImGui and Nuked-OPL3 (host/imgui, host/Nuke
 make            # terep2-headless: test host, no dependencies
 make sdl        # terep2: playable SDL2 version (needs libsdl2-dev and the submodules)
 make test       # runs the recorded scenarios and compares them with the reference
-./terep2        # opens the track chooser, starting in the current directory
+./terep2        # opens the map chooser, starting in the current directory
 ./terep2 data/Asphalt
 ./terep2 -s 4     # renders at 1280x800 (scale 1 to 8)
 ./terep2 -E fix-ice-bug  # turns on an extra option (-E all: every one), see below
 ./terep2 -n       # (--no-sound) no sound: the AdLib emulator is not even started
+./terep2 -m       # (--minimap) the map and the cars in the bottom right corner
 ```
 
 C++17 with GNU extensions (`__attribute__((packed))`, `-fwrapv` and `#embed`), so it builds with
@@ -32,8 +33,8 @@ g++ 15+ or clang++ 19+. Tested on Linux x86-64 with both. The code does not depe
 size, but it has not been tested on 32 bits. Physics runs at 120 Hz and the display at 60 Hz, as
 in the Win16 port. The window opens at the size of the picture at the chosen scale (`-s`),
 enlarged to at least 960x600 and reduced by a whole factor if it does not fit on the screen.
-Esc quits; in a game started from the track chooser it goes back to the chooser, where another
-track (or other options) can be picked. Each game starts from scratch: `game_init` resets
+Esc quits; in a game started from the map chooser it goes back to the chooser, where another
+map (or other options) can be picked. Each game starts from scratch: `game_init` resets
 everything the game keeps outside the data segment, and the host makes a new data segment and new
 segments (`host_free_game`).
 
@@ -41,17 +42,24 @@ Sound: the game writes the AdLib (OPL2) registers as the original did to ports 3
 (`src/sound.cpp`: an engine voice per view and the crash effect); the SDL host plays them through
 [Nuked-OPL3](https://github.com/nukeykt/Nuked-OPL3) (LGPL 2.1, a git submodule), an emulator of
 the OPL3 chip that starts in OPL2 mode, from an SDL audio callback at 48 kHz
-(`host/opl_sound.cpp`). "Disable sound" in the track chooser, or `-n` / `--no-sound`, leaves the
+(`host/opl_sound.cpp`). "Disable sound" in the map chooser, or `-n` / `--no-sound`, leaves the
 audio device and the emulator alone. The test host does not play anything.
 
-Without a track directory, `terep2` first opens a track chooser (Dear ImGui): the directories
+Minimap ("Minimap" in the map chooser, off by default, or `-m` / `--minimap`): the SDL host draws
+the map semi-transparent in the bottom right corner, each cell in its colour and darker where it
+is low, with a square in a colour of its own and the number of each car (in the game's font) where
+its reference point is; x is to the right and y down, so a camera turned to yaw 0 looks up the
+minimap. It is drawn over the game's picture with the SDL renderer (`host/minimap.cpp`), so the
+game's picture and the tests do not change.
+
+Without a map directory, `terep2` first opens a map chooser (Dear ImGui): the directories
 on the left, starting in the current one (`[map]` marks those with a `map.pcx` and a
-`col.pcx`); on the right a preview of the selected track, its terrain turning, drawn with the
+`col.pcx`); on the right a preview of the selected map, its terrain turning, drawn with the
 Comanche "voxel space" technique from `map.pcx` (heights) and `col.pcx` (colour of each cell
 through its palette); below it the render scale and the options (`fix-ice-bug` comes ticked
 there, and the scale starts at 3 unless `-s` is given; without the chooser the game stays
 faithful unless `-E` says otherwise, at scale 1 unless `-s` says otherwise). A click selects a
-directory, a double click enters it or plays the track, like the Play button (which needs a
+directory, a double click enters it or plays the map, like the Play button (which needs a
 `car1.dat` too). `-s` and `-E` given on the command line are the initial values. The chooser
 lives in `host/` (`launcher.cpp`, `voxel_preview.cpp`, `pcx.cpp`, with its own PCX reader) and
 does not touch the game code.
@@ -59,7 +67,7 @@ does not touch the game code.
 `-E name` (or `--extra-options name`; in both hosts, repeatable, `all` for every one) turns on
 an extra option: a fix of a bug of the original, or another change to what it does. By default
 the game behaves like the original. The options are listed in `extra_option_list` (`game.cpp`)
-and kept in `extra_options`, which the track chooser shows as checkboxes:
+and kept in `extra_options`, which the map chooser shows as checkboxes:
 
 | Name | What it does |
 |---|---|
@@ -128,17 +136,18 @@ host/
   host.hpp      what the hosts share
   common.cpp    64 KB segments, creating the data segment, time step, case-insensitive file opening
   sdl_main.cpp  SDL2 host
-  launcher.cpp  track chooser (Dear ImGui) shown when no track is given
-  voxel_preview.cpp  the chooser's preview: the track's terrain in voxel space
+  launcher.cpp  map chooser (Dear ImGui) shown when no map is given
+  voxel_preview.cpp  the chooser's preview: the map's terrain in voxel space
   pcx.cpp       PCX reader for the preview (separate from the game's)
   opl_sound.cpp the game's AdLib writes played through Nuked-OPL3 and SDL audio
+  minimap.cpp   the optional minimap drawn over the game's picture
   imgui/        Dear ImGui (git submodule)
   Nuked-OPL3/   OPL3 emulator (git submodule, LGPL 2.1)
 host_test/      the test host (terep2-headless)
   main.cpp      runs N frames with scripted keys and prints CRCs
   car_image.cpp the cars written back into the data segment in the original's format, for comparing
   dsmask.h      what the data segment CRC leaves out (shared with the oracles)
-data/           the Asphalt track and data.bin (the original's data segment, only for the oracles)
+data/           the Asphalt map and data.bin (the original's data segment, only for the oracles)
 tests/          run_tests.sh and references (ref/*.txt = keys, *.crc)
 tools/          oracles used for verification (below), dataseg.hpp generator, script generator
 ```
@@ -234,9 +243,9 @@ Results:
 
 `make test` repeats the scenario and random script 1 and compares them with the recorded
 references. It also runs the scenario with car 1 given a synthetic model that uses every opcode
-of the bytecode (`tools/synth_model.py`, built from the track's own car file, so it is not stored
-in the repository); the demo's cars only use six of them. It also plays 300 frames on another track, frees everything and then
-runs the scenario again in the same process (`terep2-headless -p track:frames`), which has to give
+of the bytecode (`tools/synth_model.py`, built from the map's own car file, so it is not stored
+in the repository); the demo's cars only use six of them. It also plays 300 frames on another map, frees everything and then
+runs the scenario again in the same process (`terep2-headless -p map:frames`), which has to give
 the same output as a fresh process.
 
 ## Things found along the way

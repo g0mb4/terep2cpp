@@ -1,9 +1,9 @@
 /*
- * The track chooser.  Left: the directories of the current one ("..",
- * then the others; tracks are marked).  Right: the selected track turning
+ * The map chooser.  Left: the directories of the current one ("..",
+ * then the others; maps are marked).  Right: the selected map turning
  * in a voxel preview, and below it the render scale and the extra options.
  * A click selects a directory, a double click enters it or, if it is a
- * track, starts the game, like the Play button.
+ * map, starts the game, like the Play button.
  */
 #include <algorithm>
 #include <cstdint>
@@ -27,7 +27,7 @@ constexpr float LIST_SHARE = 0.36f;                         // of the window wid
 
 struct Entry {
     std::string name;
-    bool track;                     // has what the preview needs (map.pcx, col.pcx)
+    bool map;                     // has what the preview needs (map.pcx, col.pcx)
 };
 
 // What a directory holds: enough to preview it, and to play it (the game
@@ -44,27 +44,27 @@ bool playable(const std::string &dir)
 
 class Launcher {
 public:
-    // Starts where the last track was chosen, with it selected; else in the current directory.
-    Launcher(SDL_Renderer *ren, bool *no_sound, const std::string &last) : ren(ren), no_sound(no_sound)
+    // Starts where the last map was chosen, with it selected; else in the current directory.
+    Launcher(SDL_Renderer *ren, HostOptions *host, const std::string &last) : ren(ren), host(host)
     {
         if (last.empty()) {
             enter(fs::current_path());
             return;
         }
-        fs::path track(last);
-        enter(track.parent_path());
+        fs::path map(last);
+        enter(map.parent_path());
         for (int i = 0; i < (int)entries.size(); i++)
-            if (entries[i].name == track.filename().string())
+            if (entries[i].name == map.filename().string())
                 select(i);
     }
     ~Launcher() { SDL_DestroyTexture(preview_tex); }
 
-    // One frame of the UI; true once a track was chosen.
-    bool frame(std::string *track);
+    // One frame of the UI; true once a map was chosen.
+    bool frame(std::string *map);
 
 private:
     SDL_Renderer *ren;
-    bool *no_sound;
+    HostOptions *host;
     SDL_Texture *preview_tex = nullptr;
     int tex_w = 0, tex_h = 0;
     std::vector<uint32_t> pixels;
@@ -104,7 +104,7 @@ void Launcher::enter(const fs::path &dir)
     std::sort(dirs.begin(), dirs.end(), [](const Entry &a, const Entry &b) { return a.name < b.name; });
     entries.insert(entries.end(), dirs.begin(), dirs.end());
     selected = -1;
-    preview.load(cwd.string());     // the directory itself may be a track
+    preview.load(cwd.string());     // the directory itself may be a map
     can_play = playable(cwd.string());
 }
 
@@ -116,7 +116,7 @@ void Launcher::select(int i)
     can_play = playable(dir);
 }
 
-bool Launcher::frame(std::string *track)
+bool Launcher::frame(std::string *map)
 {
     bool chosen = false;
     const ImGuiViewport *vp = ImGui::GetMainViewport();
@@ -147,7 +147,7 @@ bool Launcher::frame(std::string *track)
     fs::path go;
     for (int i = 0; i < (int)entries.size(); i++) {
         const Entry &e = entries[i];
-        std::string label = (e.track ? "[map] " : "      ") + e.name;
+        std::string label = (e.map ? "[map] " : "      ") + e.name;
         if (ImGui::Selectable(label.c_str(), selected == i, ImGuiSelectableFlags_AllowDoubleClick)) {
             if (i != selected)
                 select(i);
@@ -192,7 +192,10 @@ bool Launcher::frame(std::string *track)
 
     ImGui::SeparatorText("Misc options");
     float wrap = ImGui::GetCursorPosX() + show_w;
-    ImGui::Checkbox("Disable sound", no_sound);
+    ImGui::Checkbox("Minimap", &host->minimap);
+    ImGui::SameLine();
+    ImGui::TextDisabled("the map and the cars, numbered, in the bottom right corner");
+    ImGui::Checkbox("Disable sound", &host->no_sound);
     ImGui::SameLine();
     ImGui::TextDisabled("no AdLib emulation at all (Nuked-OPL3)");
     for (int i = 0; i < extra_option_count; i++) {
@@ -212,17 +215,17 @@ bool Launcher::frame(std::string *track)
     ImGui::End();
 
     if (chosen)
-        *track = selected_path().string();
+        *map = selected_path().string();
     return chosen;
 }
 
 }  // namespace
 
-bool launcher_run(SDL_Window *win, SDL_Renderer *ren, std::string *track, bool *no_sound)
+bool launcher_run(SDL_Window *win, SDL_Renderer *ren, std::string *map, HostOptions *host)
 {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGui::GetIO().IniFilename = nullptr;       // nothing written to the track directories
+    ImGui::GetIO().IniFilename = nullptr;       // nothing written to the map directories
     ImGui::StyleColorsDark();
     ImGui_ImplSDL2_InitForSDLRenderer(win, ren);
     ImGui_ImplSDLRenderer2_Init(ren);
@@ -230,7 +233,7 @@ bool launcher_run(SDL_Window *win, SDL_Renderer *ren, std::string *track, bool *
     const Uint32 opened = SDL_GetTicks();
     bool chosen = false, quit = false;
     {
-        Launcher ui(ren, no_sound, *track);
+        Launcher ui(ren, host, *map);
         while (!chosen && !quit) {
             SDL_Event e;
             while (SDL_PollEvent(&e)) {
@@ -242,7 +245,7 @@ bool launcher_run(SDL_Window *win, SDL_Renderer *ren, std::string *track, bool *
             ImGui_ImplSDLRenderer2_NewFrame();
             ImGui_ImplSDL2_NewFrame();
             ImGui::NewFrame();
-            chosen = ui.frame(track);
+            chosen = ui.frame(map);
             ImGui::Render();
             SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
             SDL_RenderClear(ren);

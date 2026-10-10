@@ -68,7 +68,7 @@ FILE *data_fopen(const char *name)
 #else
 #include <dirent.h>
 #include <strings.h>
-/* Track files come with any mix of upper and lower case. */
+/* Map files come with any mix of upper and lower case. */
 FILE *data_fopen(const char *name)
 {
     FILE *f = fopen(name, "rb");

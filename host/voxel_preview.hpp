@@ -1,4 +1,4 @@
-// A quick look at a track for the launcher: the terrain drawn the way
+// A quick look at a map for the launcher: the terrain drawn the way
 // Comanche did ("voxel space"), with a camera circling the map.  Software,
 // RGBA, independent from the game's renderer.
 #pragma once
@@ -8,7 +8,7 @@
 class VoxelPreview {
 public:
     // Reads map.pcx (heights) and col.pcx (colour of each cell, and the
-    // palette) from a track directory.  False if they are not both there.
+    // palette) from a map directory.  False if they are not both there.
     bool load(const std::string &dir);
     bool loaded() const { return ok; }
 
