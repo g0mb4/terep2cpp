@@ -9,8 +9,9 @@ A readable C++ rewrite ("C with classes" style) of **Terep2** (Nagymáthé Déne
 "-DEFORMERS- Atomic Vehicle Simulation System"), made from the disassembly in
 `terep2isolado/reasm/maincode.asm` and the Win16 version. Its behaviour is identical to the
 original frame by frame: the framebuffer and the game state match the original asm byte for byte
-(see [Verification](#verification)). The one exception is a bug fixed on purpose (the jump bug
-that corrupts the title).
+(see [Verification](#verification)). The exceptions are a bug fixed on purpose (the jump bug
+that corrupts the title) and a crash of the original that the port does not reproduce (see
+[Things found along the way](#things-found-along-the-way)).
 
 ## Building and running
 
@@ -21,6 +22,7 @@ make test       # runs the recorded scenarios and compares them with the referen
 ./terep2        # uses data/Asphalt
 ./terep2 other/track
 ./terep2 -s 4     # renders at 1280x800 (scale 1 to 8)
+./terep2 -F ice   # turns on an optional fix (-F all: every one), see below
 ```
 
 C++17 with GNU extensions (`__attribute__((packed))`, `-fwrapv` and `#embed`), so it builds with
@@ -29,6 +31,14 @@ size, but it has not been tested on 32 bits. Physics runs at 120 Hz and the disp
 in the Win16 port. The window opens at the size of the picture at the chosen scale (`-s`),
 enlarged to at least 960x600 and reduced by a whole factor if it does not fit on the screen.
 Esc quits.
+
+`-F name` (in both hosts, repeatable) turns on an optional fix of a bug of the original; by
+default the game behaves like the original. The fixes are listed in `fix_list` (`game.cpp`)
+and kept in `fixes`, ready to become checkboxes in a settings screen:
+
+| Name | Fix |
+|---|---|
+| `ice` | ice chipped at the lowest height no longer wraps around to the highest (see below) |
 
 ### Higher resolution
 
@@ -211,6 +221,28 @@ Bug of the original that was **fixed**:
   turns into garbage. Since letters ≥ 128 read the font table out of place, sometimes even past
   the end of `data.bin`, the corrupted title was not even the same between builds. Now such a
   car looks for its lowest point as on a fresh press, and the jump works.
+
+Bug of the original that can be **fixed on request** (`-F ice`):
+
+- **Ice pillars**: an ice chip that lands lowers the heightmap cell under it by one
+  (`particles_update`). The height is a byte, so at 0 it wraps around to 255, the highest
+  terrain there is (4080 units): a thin pillar appears out of the ice, keeps throwing the cars
+  up, and every chip landing on it lowers it by one again. With the fix the cell stays at 0.
+  The recorded tests never chip ice at height 0, so they pass with and without it.
+
+Crash of the original that the port **does not reproduce** (left as it is):
+
+- **Divide overflow when flying high**: projection (`project`, orig 1000:2760) divides with
+  16-bit `IDIV`, so the screen coordinate has to fit in 16 bits. A point that the near-plane
+  clipper puts at depth `near_clip` (30) overflows when it is more than about 3840 units
+  (some 15 cells) above or below the eye. With a car kicked high up (1+2), the chase camera
+  follows it and terrain triangles crossing the near plane have corners thousands of units
+  below; the quotient does not fit and the CPU raises #DE, which ends the original ("divide by
+  zero in 16-bit code" under Wine, with BX = 0x1e = `near_clip`). The port divides in 32 bits
+  and keeps the low 16 bits, so the coordinate wraps around instead: the point lands on the
+  other side of the screen and that polygon is drawn stretched across it for the frames it
+  lasts. It goes back to normal once the car comes down. The same happens at any scale, since
+  `near_point` projects before scaling. The tests never get there.
 
 Difference between the Win16 port and `previous_effort`: the spring length (`sqrt`) is rounded
 (CVTSS2SI) in the binary, while previous_effort truncated it. That is why it drifted from the

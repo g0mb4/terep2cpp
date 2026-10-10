@@ -5,6 +5,24 @@
 
 DataSeg *G;
 uint8_t keys[128];                  /* all released (0xff) once game_init ran */
+Fixes fixes;
+
+const FixInfo fix_list[] = {
+    { "ice", &Fixes::ice_floor, "ice chipped at the lowest height no longer wraps to the highest" },
+};
+const int fix_count = sizeof fix_list / sizeof fix_list[0];
+
+bool fix_enable(const char *name)
+{
+    bool found = false;
+    for (const FixInfo &f : fix_list) {
+        if (!strcmp(name, "all") || !strcmp(name, f.name)) {
+            fixes.*f.flag = true;
+            found = true;
+        }
+    }
+    return found;
+}
 
 /* Line added by the Win16 port, drawn in a cycling colour. */
 static const char port_banner[] = "GAMBIARRA FOREVER!";

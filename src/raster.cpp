@@ -408,7 +408,9 @@ static struct {
 } nc;
 
 /* Projection of a point lying on the near plane.  The original uses the
- * full-screen centre here even in split screen. */
+ * full-screen centre here even in split screen.  Far above or below the eye
+ * the projection overflows 16 bits: the original crashes there, this port
+ * wraps around (see project). */
 static void near_point(int16_t x, int16_t z, uint32_t attr)
 {
     PolyVertex &o = G->poly_buf[0].v[nc.count++];

@@ -2,9 +2,10 @@
  * SDL2 host: a window, the keyboard and the original timing (physics at
  * 120 Hz, display at 60 Hz, as in the Win16 port).
  *
- *   terep2 [-s scale] [trackdir]      (default: data/Asphalt)
+ *   terep2 [-s scale] [-F fix]... [trackdir]      (default: data/Asphalt)
  *
  * scale: render at 320*scale x 200*scale (1 = the original picture).
+ * -F fix: turn on a fix of a bug of the original (see fix_list), or "all".
  *
  * Esc quits.  The AdLib sound is not played.
  */
@@ -92,7 +93,13 @@ int main(int argc, char **argv)
         std::string_view opt = argv[a];
         if (opt == "-s")
             render_scale = atoi(argv[a + 1]);
-        else
+        else if (opt == "-F" && !fix_enable(argv[a + 1])) {
+            fprintf(stderr, "unknown fix %s; known:", argv[a + 1]);
+            for (int i = 0; i < fix_count; i++)
+                fprintf(stderr, " %s", fix_list[i].name);
+            fprintf(stderr, " all\n");
+            return 2;
+        } else if (opt != "-F")
             break;
     }
     if (a < argc)

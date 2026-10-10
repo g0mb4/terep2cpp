@@ -89,7 +89,9 @@ Vec3 vec3_normalize(Vec3 v)
     return { v.x / len, v.y / len, v.z / len };
 }
 
-/* Perspective divide, orig 1000:2760.  depth is the camera-space y. */
+/* Perspective divide, orig 1000:2760.  depth is the camera-space y.  The
+ * original divides with 16-bit IDIV and crashes (divide overflow) when the
+ * result does not fit; here it wraps around instead (see the README). */
 void project(int16_t x, int16_t depth, int16_t z, int16_t *sx, int16_t *sz)
 {
     *sx = (int16_t)(((int32_t)x << 8) / depth);

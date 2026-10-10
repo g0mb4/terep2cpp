@@ -620,7 +620,11 @@ static void particles_update()
                 uint8_t &col = colormap()[(uint16_t)((y & 0xff00) | (x >> 8))];
                 if (col & 0x0f)
                     col--;
-                heightmap()[(uint16_t)(((uint16_t)(y + 0x80) & 0xff00) | ((uint16_t)(x + 0x80) >> 8))]--;
+                /* bug of the original (fixed with -F ice): at height 0
+                 * the cell wraps to 255, a pillar that throws cars up */
+                uint8_t &h = heightmap()[(uint16_t)(((uint16_t)(y + 0x80) & 0xff00) | ((uint16_t)(x + 0x80) >> 8))];
+                if (h || !fixes.ice_floor)
+                    h--;
                 p.kind = Particle::DUST;
                 p.vel = { 0, 0, 10000 };
             }

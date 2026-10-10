@@ -4,7 +4,9 @@
  * of the data segment (scratch variables masked), in the same format as
  * tools/oracle so the outputs can be compared directly.
  *
- *   terep2-headless [-s scale] trackdir frames [script] [ppmdir]
+ *   terep2-headless [-s scale] [-F fix]... trackdir frames [script] [ppmdir]
+ *
+ * -F fix: turn on a fix of a bug of the original (see fix_list), or "all".
  *
  * script: comma separated frame:scancode pairs (scancode | 0x80 = release)
  * ppmdir: write each frame as fNNNN.ppm there (only frame n with DUMP_FRAME=n)
@@ -46,11 +48,17 @@ int main(int argc, char **argv)
         std::string_view opt = argv[a];
         if (opt == "-s")
             render_scale = atoi(argv[a + 1]);
-        else
+        else if (opt == "-F" && !fix_enable(argv[a + 1])) {
+            fprintf(stderr, "unknown fix %s; known:", argv[a + 1]);
+            for (int i = 0; i < fix_count; i++)
+                fprintf(stderr, " %s", fix_list[i].name);
+            fprintf(stderr, " all\n");
+            return 2;
+        } else if (opt != "-F")
             break;
     }
     if (argc - a < 2 || render_scale < 1 || render_scale > MAX_RENDER_SCALE) {
-        fprintf(stderr, "usage: %s [-s 1..%d] trackdir frames [script] [ppmdir]\n",
+        fprintf(stderr, "usage: %s [-s 1..%d] [-F fix]... trackdir frames [script] [ppmdir]\n",
                 argv[0], MAX_RENDER_SCALE);
         return 2;
     }

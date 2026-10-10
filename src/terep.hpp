@@ -303,6 +303,23 @@ inline int16_t screen_clamp(int32_t v)
     return (int16_t)(v < -16000 ? -16000 : v > 16000 ? 16000 : v);
 }
 
+/* Optional fixes of bugs of the original.  All off by default, so the game
+ * behaves (and tests) like the original; the host turns them on (-F name),
+ * later a settings screen can show fix_list as checkboxes. */
+struct Fixes {
+    bool ice_floor = false;         /* ice chipped at height 0 stays at 0 instead of becoming 255 */
+};
+extern Fixes fixes;
+
+struct FixInfo {
+    const char *name;               /* as given to -F */
+    bool Fixes::*flag;
+    const char *what;
+};
+extern const FixInfo fix_list[];
+extern const int fix_count;
+bool     fix_enable(const char *name);  /* by name, or "all"; false if unknown */
+
 /* ---------------------------------------------------------------------------
  * Modules
  * ------------------------------------------------------------------------- */
