@@ -93,7 +93,6 @@ bool opengl_start()
         use_host();
         return false;
     }
-    use_host();
 
     for(int i = 0; i < 5; i++){
         carros[i].id = -1;
@@ -116,6 +115,8 @@ bool opengl_start()
     
     //TODO one more error checking here
     
+    use_host();                             // only now: every rz* call above needs the library's context
+    SDL_GL_SetSwapInterval(1);              // the library's context turns vsync off for the window
     return true;
 #else
     return false;
@@ -165,11 +166,13 @@ static void game_keys()
 
 bool opengl_frame(int win_w, int win_h, PictureRect *where)
 {
+    #ifdef TEREP2_GLR
+        use_lib();                          // game_keys calls the library too
+    #endif
     game_keys();
     engine_sound(G->player_car[0], 0);      // what draw_view does for the sound
 
     #ifdef TEREP2_GLR
-        use_lib();
         if(broke_some_ice){
             rzUpdateTerrain(ctx);
             broke_some_ice = 0;
