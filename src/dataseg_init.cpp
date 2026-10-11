@@ -8,28 +8,6 @@
 #include <cmath>
 #include "terep.hpp"
 
-/* atan(i / 256) in binary angle units (0x10000 = 360 deg), i = 0..256.
- * Not quite a rounded atan (39 entries are 1 lower), so kept as a table. */
-static const uint16_t atan_values[257] = {
-    0, 41, 81, 122, 163, 204, 244, 285, 326, 367, 407, 448, 489, 529, 570, 610,
-    651, 692, 732, 773, 813, 854, 894, 935, 975, 1015, 1056, 1096, 1136, 1177, 1217, 1257,
-    1297, 1337, 1377, 1417, 1457, 1497, 1537, 1577, 1617, 1656, 1696, 1736, 1775, 1815, 1854, 1894,
-    1933, 1973, 2012, 2051, 2090, 2129, 2168, 2207, 2246, 2285, 2324, 2363, 2401, 2440, 2478, 2517,
-    2555, 2593, 2632, 2670, 2708, 2746, 2784, 2822, 2860, 2897, 2935, 2973, 3010, 3047, 3085, 3122,
-    3159, 3196, 3233, 3270, 3307, 3344, 3380, 3417, 3453, 3490, 3526, 3562, 3598, 3634, 3670, 3706,
-    3742, 3778, 3813, 3849, 3884, 3919, 3955, 3990, 4025, 4060, 4095, 4129, 4164, 4198, 4233, 4267,
-    4301, 4336, 4370, 4404, 4437, 4471, 4505, 4538, 4572, 4605, 4638, 4672, 4705, 4738, 4770, 4803,
-    4836, 4868, 4901, 4933, 4965, 4998, 5030, 5062, 5093, 5125, 5157, 5188, 5220, 5251, 5282, 5313,
-    5344, 5375, 5406, 5437, 5467, 5498, 5528, 5558, 5589, 5619, 5649, 5678, 5708, 5738, 5767, 5797,
-    5826, 5855, 5885, 5914, 5943, 5971, 6000, 6029, 6057, 6086, 6114, 6142, 6170, 6198, 6226, 6254,
-    6282, 6310, 6337, 6364, 6392, 6419, 6446, 6473, 6500, 6527, 6554, 6580, 6607, 6633, 6659, 6686,
-    6712, 6738, 6764, 6790, 6815, 6841, 6866, 6892, 6917, 6942, 6968, 6993, 7018, 7043, 7067, 7092,
-    7117, 7141, 7165, 7190, 7214, 7238, 7262, 7286, 7310, 7334, 7357, 7381, 7404, 7428, 7451, 7474,
-    7497, 7520, 7543, 7566, 7589, 7612, 7634, 7657, 7679, 7702, 7724, 7746, 7768, 7790, 7812, 7834,
-    7855, 7877, 7899, 7920, 7941, 7963, 7984, 8005, 8026, 8047, 8068, 8089, 8110, 8130, 8151, 8171,
-    8192,
-};
-
 /* The font: src/font.pbm (plain PBM), 5 pixels wide, one 5x5 glyph below
  * the other in memory order; a glyph is as wide as its rightmost lit column.
  * font_chars lists the character of each glyph; every other character
@@ -216,7 +194,14 @@ void dataseg_init()
         long v = std::lround(32768.0 * std::sin(i * pi / 2048.0));
         G->sin_table[i] = (int16_t)(v > 0x7fff ? 0x7fff : v);
     }
-    memcpy(G->atan_table, atan_values, sizeof atan_values);
+    /* atan(i / 256), i = 0..256, in binary angle units (0x10000 = 360 deg).
+     * The original's table was made with pi typed as 3.14169; with it every
+     * entry is the rounded atan, except 75: 2972.49989 here, a tie that the
+     * original's arithmetic rounded up.  The others are at least 3e-3 from a
+     * tie, so the libm's last bit cannot change them. */
+    for (int i = 0; i <= 256; i++)
+        G->atan_table[i] = (uint16_t)std::lround(std::atan(i / 256.0) * 32768 / 3.14169);
+    G->atan_table[75]++;
     init_font();
     memcpy(G->sfx_engine_patch, engine_patch, sizeof engine_patch);
     memcpy(G->sfx_hit_patch, hit_patch, sizeof hit_patch);
