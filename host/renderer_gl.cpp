@@ -73,6 +73,7 @@ bool opengl_start()
     auto w = gui_window();
 
     int ok = rzCreateWindow(w, &ctx);
+    SDL_GL_SetSwapInterval(1);
     lib_gl = SDL_GL_GetCurrentContext();
     if(ok != RZ_OK){
         SDL_GL_MakeCurrent(w, gui_context());
