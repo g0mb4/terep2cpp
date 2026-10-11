@@ -238,6 +238,25 @@ static void loadCar(int i, std::string cpcx){
 
             continue;
         }
+        if(o.op == 8){ //OP_TEXTURED
+            auto pts = o.outline;
+
+            int n = pts.size();
+
+            RzTexVertex vtx[n];
+
+            for(int i =0; i < n;i++){
+                auto v = pts[i];
+                uint32_t attr = v.attr;
+                
+                vtx[i].index = v.point >> 1;
+                vtx[i].u = F_UV(attr & 0xFFFF);
+                vtx[i].v = F_UV(attr >> 16);
+                
+            }
+            
+            rzAddObjectTexturedPolygon(ctx, idCar, vtx, n);
+        }
 
         printf("unhandled: %d\n", o.op);
     }
