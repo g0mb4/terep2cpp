@@ -17,6 +17,29 @@
     #include "gl_renderer/renderizeitor.h"
     static RzContext* ctx;
 
+    struct carrodef_s{
+        int32_t id;
+        int16_t n_points;
+        uint16_t camera_pt;
+    };
+
+    carrodef_s carros[5];
+
+    static void updateCars();
+    static int isLine(uint16_t[], int);
+    static void loadCar(int, std::string);
+
+    #define F_8_24(_val) ({ \
+        const float scale = 1.0f / (float)(1 << 24); \
+        float vv = _val;   \
+        vv * scale;        \
+    })
+
+    #define F_UV(_val) ({ \
+        float vv = _val;   \
+        vv / 65535.0f;     \
+    })
+
 // rzCreateWindow makes an OpenGL context of its own on the host's window and
 // leaves it current, and rzDestroy deletes it.  The host (ImGui: the map
 // chooser, the minimap) draws with its own context, so the library's is
@@ -64,6 +87,21 @@ bool opengl_start()
     }
     use_host();
 
+    for(int i = 0; i < 5; i++){
+        carros[i].id = -1;
+        if(i >= G->num_cars){
+            continue;
+        }
+
+        auto cpcx = files.cars[i].pcx;
+
+        loadCar(i, cpcx);
+
+    }
+
+    rzSetCameraTarget(ctx, carros[0].id, 0); //TODO get the actual vertex
+
+    updateCars();
     //TODO continuacao
     
     return true;
@@ -105,6 +143,7 @@ bool opengl_frame(int win_w, int win_h, PictureRect *where)
 
     #ifdef TEREP2_GLR
         use_lib();
+        updateCars();
         rzRender(ctx);
         use_host();
     #endif
@@ -120,6 +159,101 @@ void opengl_stop()
 #ifdef TEREP2_GLR
     use_lib();
     rzDestroy(ctx);
+    for(int i = 0; i < 5; i++){
+        carros[i].id = -1;
+    }
     use_host();
 #endif
 }
+
+#ifdef TEREP2_GLR
+static void updateCars(){
+    for(int ci = 0; ci< 5 ; ci++){
+        int id = carros[ci].id;
+        if(id < 0){
+            continue;
+        }
+
+        int n = carros[ci].n_points;
+        auto car = car_get(ci);
+
+        RzVertex ptrs[n];
+
+        for(int i =0; i< n; i++){
+            auto p = car.points[i].pos;
+
+            ptrs[i].x = F_8_24(p.x.raw);
+            ptrs[i].y = F_8_24(p.y.raw);
+            ptrs[i].z = F_8_24(p.z.raw);
+        }
+
+        //TODO wheels, steering
+        rzUpdateObjectVertices(ctx, id, ptrs);
+    }
+}
+
+static void loadCar(int i, std::string cpcx){
+    auto car = car_get(i);
+    carros[i].n_points = car.points.size();
+
+    int idCar;
+    rzCreateObject(ctx, carros[i].n_points, &idCar);
+    carros[i].id = idCar;
+
+    if(cpcx != ""){
+        rzLoadObjectTexture(ctx, idCar, cpcx.c_str());
+    }
+
+    for (const auto &o : car.model_ops){
+        if(o.op == 4){ //flat polygon
+            auto color = o.word & 0xff;
+            auto pts = o.outline;
+
+            int n = pts.size();
+            uint16_t idxs[n];
+            int flag = 0;
+
+            for(int i = 0; i < n; i++){
+                int v = pts[i].point;
+                flag |= v & 1;
+                idxs[i] = v >> 1;
+            }
+
+            if(flag){
+                //shadow polygon, we dont need that
+                continue;
+            }
+
+            if(isLine(idxs, n)){
+                rzAddObjectLine(ctx, idCar, idxs[0], idxs[1], 0.006f, color);
+                continue;
+            }
+
+            if(color == 240){
+                //TODO see if there is a single tone or various
+                rzAddObjectTranslucentPolygon(ctx, idCar, idxs, n, 8);
+            }else{
+                rzAddObjectPolygon(ctx, idCar, idxs, n, color);
+            }
+
+            continue;
+        }
+
+        printf("unhandled: %d\n", o.op);
+    }
+}
+
+static int isLine(uint16_t vertx[], int n){
+    //checks if its a polygon with only 2 distinct vertices
+    uint8_t z[256] = {0};
+    for(int i = 0;i < n;i++){
+        auto v = vertx[i];
+        z[v] = 1;
+    }
+    int cnt = 0;
+    for(size_t i = 0;i < sizeof(z);i++){
+        cnt += z[i];
+    }
+    return cnt == 2;
+}
+#endif
