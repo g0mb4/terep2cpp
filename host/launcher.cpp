@@ -10,8 +10,7 @@
 #include <filesystem>
 #include <vector>
 #include "imgui.h"
-#include "imgui_impl_sdl2.h"
-#include "imgui_impl_sdlrenderer2.h"
+#include "gui.hpp"
 #include "host.hpp"
 #include "launcher.hpp"
 #include "voxel_preview.hpp"
@@ -45,7 +44,7 @@ bool playable(const std::string &dir)
 class Launcher {
 public:
     // Starts where the last map was chosen, with it selected; else in the current directory.
-    Launcher(SDL_Renderer *ren, HostOptions *host, const std::string &last) : ren(ren), host(host)
+    Launcher(HostOptions *host, const std::string &last) : host(host)
     {
         if (last.empty()) {
             enter(fs::current_path());
@@ -57,16 +56,13 @@ public:
             if (entries[i].name == map.filename().string())
                 select(i);
     }
-    ~Launcher() { SDL_DestroyTexture(preview_tex); }
 
     // One frame of the UI; true once a map was chosen.
     bool frame(std::string *map);
 
 private:
-    SDL_Renderer *ren;
     HostOptions *host;
-    SDL_Texture *preview_tex = nullptr;
-    int tex_w = 0, tex_h = 0;
+    GuiTexture preview_tex;
     std::vector<uint32_t> pixels;
     fs::path cwd;
     std::vector<Entry> entries;
@@ -168,16 +164,10 @@ bool Launcher::frame(std::string *map)
     ImGui::BeginGroup();
     angle += ImGui::GetIO().DeltaTime * 0.35f;
     int w = (int)show_w < PREVIEW_MAX_W ? (int)show_w : PREVIEW_MAX_W, h = w * 9 / 16;
-    if (w != tex_w || h != tex_h) {
-        SDL_DestroyTexture(preview_tex);
-        preview_tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, w, h);
-        pixels.resize((size_t)w * h);
-        tex_w = w;
-        tex_h = h;
-    }
+    pixels.resize((size_t)w * h);
     preview.render(pixels.data(), w, h, angle);
-    SDL_UpdateTexture(preview_tex, nullptr, pixels.data(), w * 4);
-    ImGui::Image((ImTextureID)(intptr_t)preview_tex, ImVec2(show_w, show_h));
+    preview_tex.upload(pixels.data(), w, h, false);
+    ImGui::Image(preview_tex.id(), ImVec2(show_w, show_h));
     std::string name = selected_path().filename().string();
     if (preview.loaded())
         ImGui::Text("%s%s", name.c_str(), can_play ? "" : "  (no car1.dat: cannot be played)");
@@ -221,40 +211,24 @@ bool Launcher::frame(std::string *map)
 
 }  // namespace
 
-bool launcher_run(SDL_Window *win, SDL_Renderer *ren, std::string *map, HostOptions *host)
+bool launcher_run(std::string *map, HostOptions *host)
 {
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGui::GetIO().IniFilename = nullptr;       // nothing written to the map directories
-    ImGui::StyleColorsDark();
-    ImGui_ImplSDL2_InitForSDLRenderer(win, ren);
-    ImGui_ImplSDLRenderer2_Init(ren);
-
     const Uint32 opened = SDL_GetTicks();
     bool chosen = false, quit = false;
     {
-        Launcher ui(ren, host, *map);
+        Launcher ui(host, *map);
         while (!chosen && !quit) {
             SDL_Event e;
             while (SDL_PollEvent(&e)) {
-                ImGui_ImplSDL2_ProcessEvent(&e);
+                gui_event(e);
                 bool esc = e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE && !e.key.repeat;
                 if (e.type == SDL_QUIT || (esc && SDL_GetTicks() - opened >= ESC_GRACE_MS))
                     quit = true;
             }
-            ImGui_ImplSDLRenderer2_NewFrame();
-            ImGui_ImplSDL2_NewFrame();
-            ImGui::NewFrame();
+            gui_begin();
             chosen = ui.frame(map);
-            ImGui::Render();
-            SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
-            SDL_RenderClear(ren);
-            ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), ren);
-            SDL_RenderPresent(ren);
+            gui_end();
         }
     }
-    ImGui_ImplSDLRenderer2_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
-    ImGui::DestroyContext();
     return chosen;
 }

@@ -16,6 +16,7 @@
  *
  * Esc quits, or goes back to the chooser if the game was started from it.
  */
+#include <algorithm>
 #include <climits>
 #include <cstdlib>
 #include <string>
@@ -24,6 +25,7 @@
 #include <vector>
 #include <SDL.h>
 #include "host.hpp"
+#include "gui.hpp"
 #include "launcher.hpp"
 #include "minimap.hpp"
 #include "opl_sound.hpp"
@@ -100,13 +102,12 @@ static uint8_t pc_scancode(SDL_Scancode s)
 enum class Ending { BACK, QUIT, FAILED };   // Esc, window closed, could not start
 
 // The game loop: physics at 120 Hz, the picture at 60 Hz.
-static Ending run(SDL_Renderer *ren, bool minimap)
+static Ending run(bool minimap)
 {
     const int w = screen_w(), h = screen_h();
-    SDL_RenderSetLogicalSize(ren, w, h);
-    SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, w, h);
-    std::vector<uint8_t> rgb((size_t)w * h * 3);
-    Minimap *mini = minimap ? new Minimap(ren) : nullptr;
+    std::vector<uint32_t> rgba((size_t)w * h);
+    GuiTexture picture;
+    Minimap *mini = minimap ? new Minimap() : nullptr;
 
     const uint64_t freq = SDL_GetPerformanceFrequency();
     uint64_t next_tick = SDL_GetPerformanceCounter(), next_frame = next_tick;
@@ -114,6 +115,7 @@ static Ending run(SDL_Renderer *ren, bool minimap)
     for (bool running = true; running;) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
+            gui_event(e);
             if (e.type == SDL_QUIT) {
                 end = Ending::QUIT;
                 running = false;
@@ -137,27 +139,33 @@ static Ending run(SDL_Renderer *ren, bool minimap)
                 next_frame = now;           // do not try to catch up after a stall
             if (game_frame())
                 running = false;
+            // the game's picture, through the palette, as large as the window allows
+            // (an external renderer would draw here instead, see renderer_api.hpp)
             const uint8_t *scr = screen();
-            for (int i = 0; i < w * h; i++)
-                memcpy(&rgb[i * 3], host_palette(scr[i]), 3);
-            SDL_UpdateTexture(tex, nullptr, rgb.data(), w * 3);
-            SDL_RenderClear(ren);
-            SDL_RenderCopy(ren, tex, nullptr, nullptr);
+            for (int i = 0; i < w * h; i++) {
+                const uint8_t *c = host_palette(scr[i]);
+                rgba[i] = 0xff000000u | (uint32_t)c[2] << 16 | (uint32_t)c[1] << 8 | c[0];
+            }
+            picture.upload(rgba.data(), w, h, false);
+            gui_begin();
+            const ImVec2 win = ImGui::GetIO().DisplaySize;
+            const float k = std::min(win.x / w, win.y / h);
+            const float x0 = (win.x - w * k) / 2, y0 = (win.y - h * k) / 2;
+            ImGui::GetBackgroundDrawList()->AddImage(picture.id(), ImVec2(x0, y0), ImVec2(x0 + w * k, y0 + h * k));
             if (mini)
-                mini->draw(w, h);
-            SDL_RenderPresent(ren);
+                mini->draw(ImGui::GetForegroundDrawList(), x0, y0, k, w, h);
+            gui_end();
         } else {
             SDL_Delay(1);
         }
     }
     delete mini;
-    SDL_DestroyTexture(tex);
     return end;
 }
 
 // One game on map, from a fresh data segment, until Esc or the window is
 // closed; everything it used is freed again.
-static Ending play(SDL_Renderer *ren, const std::string &map, const HostOptions &host)
+static Ending play(const std::string &map, const HostOptions &host)
 {
     char here[PATH_MAX];
     if (!getcwd(here, sizeof here))
@@ -174,7 +182,7 @@ static Ending play(SDL_Renderer *ren, const std::string &map, const HostOptions 
     else if (game_init() != 0 || G->num_cars <= 0)
         fprintf(stderr, "could not load the map in %s (no car1.dat?)\n", map.c_str());
     else
-        end = run(ren, host.minimap);
+        end = run(host.minimap);
     opl_sound_stop();
     host_free_game();
     if (chdir(here) != 0)
@@ -224,13 +232,9 @@ int main(int argc, char **argv)
     int win_w = 320 * MIN_ZOOM, win_h = 200 * MIN_ZOOM;
     if (!chooser)
         window_size(&win_w, &win_h);
-    SDL_Window *win = SDL_CreateWindow("Terep2", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                       win_w, win_h, SDL_WINDOW_RESIZABLE);
-    SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_PRESENTVSYNC);
-    if (!win || !ren) {
-        fprintf(stderr, "SDL: %s\n", SDL_GetError());
+    SDL_Window *win = gui_open(win_w, win_h);
+    if (!win)
         return 1;
-    }
     if (chooser) {
         if (!scale_given)
             render_scale = 3;                       // the chooser starts at 3x
@@ -240,21 +244,24 @@ int main(int argc, char **argv)
     // Esc in a game started from the chooser goes back to it, for another map
     for (;;) {
         if (chooser) {
-            SDL_RenderSetLogicalSize(ren, 0, 0);
             SDL_SetWindowSize(win, 320 * MIN_ZOOM, 200 * MIN_ZOOM);
             SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-            if (!launcher_run(win, ren, &map, &host))
+            if (!launcher_run(&map, &host))
                 break;
             window_size(&win_w, &win_h);            // for the scale chosen there
             SDL_SetWindowSize(win, win_w, win_h);
             SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
         }
-        Ending end = play(ren, map, host);
-        if (end == Ending::FAILED && !chooser)
+        Ending end = play(map, host);
+        if (end == Ending::FAILED && !chooser) {
+            gui_close();
+            SDL_Quit();
             return 1;
+        }
         if (end == Ending::QUIT || !chooser)
             break;
     }
+    gui_close();
     SDL_Quit();
     return 0;
 }

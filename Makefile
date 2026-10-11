@@ -19,11 +19,16 @@ TEST     := $(wildcard host_test/*.cpp)
 terep2-headless: $(GAME) $(HOST) $(TEST) $(HEADERS) $(wildcard host_test/*.hpp) host_test/dsmask.h
 	$(CXX) $(CXXFLAGS) -o $@ $(GAME) $(HOST) $(TEST) -lm
 
-# The SDL host and its track chooser; Dear ImGui is the git submodule in host/imgui.
-SDL_HOST := host/sdl_main.cpp host/launcher.cpp host/voxel_preview.cpp host/pcx.cpp host/opl_sound.cpp host/minimap.cpp
+# The SDL host and its map chooser (OpenGL 3.3); Dear ImGui is the git submodule in host/imgui.
+ifeq ($(OS),Windows_NT)
+GL_LIBS  := -lopengl32
+else
+GL_LIBS  := -lGL
+endif
+SDL_HOST := host/sdl_main.cpp host/launcher.cpp host/voxel_preview.cpp host/pcx.cpp host/opl_sound.cpp host/minimap.cpp host/gui.cpp host/renderer_api.cpp
 IMGUI    := host/imgui
 IMGUI_OBJ := $(patsubst $(IMGUI)/%.cpp,build/imgui/%.o,$(addprefix $(IMGUI)/,imgui.cpp imgui_draw.cpp \
-             imgui_tables.cpp imgui_widgets.cpp backends/imgui_impl_sdl2.cpp backends/imgui_impl_sdlrenderer2.cpp))
+             imgui_tables.cpp imgui_widgets.cpp backends/imgui_impl_sdl2.cpp backends/imgui_impl_opengl3.cpp))
 
 $(IMGUI)/imgui.h:
 	@echo "Dear ImGui is missing: git submodule update --init" >&2; false
@@ -45,7 +50,7 @@ build/imgui/%.o: $(IMGUI)/%.cpp $(IMGUI)/imgui.h
 sdl: terep2
 terep2: $(GAME) $(HOST) $(SDL_HOST) $(wildcard host/*.hpp) $(HEADERS) $(IMGUI_OBJ) build/opl3.o
 	$(CXX) $(CXXFLAGS) $$(sdl2-config --cflags) -I$(IMGUI) -I$(IMGUI)/backends -I$(OPL3) -o $@ \
-		$(GAME) $(HOST) $(SDL_HOST) $(IMGUI_OBJ) build/opl3.o $$(sdl2-config --libs) -lm
+		$(GAME) $(HOST) $(SDL_HOST) $(IMGUI_OBJ) build/opl3.o $$(sdl2-config --libs) $(GL_LIBS) -lm
 
 test: terep2-headless
 	sh tests/run_tests.sh

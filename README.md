@@ -18,7 +18,7 @@ that corrupts the title) and a crash of the original that the port does not repr
 ```sh
 git submodule update --init   # Dear ImGui and Nuked-OPL3 (host/imgui, host/Nuked-OPL3), for terep2
 make            # terep2-headless: test host, no dependencies
-make sdl        # terep2: playable SDL2 version (needs libsdl2-dev and the submodules)
+make sdl        # terep2: playable SDL2 + OpenGL 3.3 version (needs libsdl2-dev, OpenGL and the submodules)
 make test       # runs the recorded scenarios and compares them with the reference
 ./terep2        # opens the map chooser, starting in the current directory
 ./terep2 data/Asphalt
@@ -38,6 +38,13 @@ map (or other options) can be picked. Each game starts from scratch: `game_init`
 everything the game keeps outside the data segment, and the host makes a new data segment and new
 segments (`host_free_game`).
 
+Window: the SDL host owns one OpenGL 3.3 core context (`host/gui.cpp`). The map chooser, the
+game's picture (the software renderer's frame, as a texture, scaled to the window keeping its
+shape) and the minimap all go through Dear ImGui on it. An external OpenGL renderer can draw into
+the same context; `host/renderer_api.hpp` gives it the context, the real paths of the map's files
+(`map_files()`) and the map's height and tile layers (`map_layers()`). What is still to do for it
+is in [TODO-lib.md](TODO-lib.md).
+
 Sound: the game writes the AdLib (OPL2) registers as the original did to ports 388h/389h
 (`src/sound.cpp`: an engine voice per view and the crash effect); the SDL host plays them through
 [Nuked-OPL3](https://github.com/nukeykt/Nuked-OPL3) (LGPL 2.1, a git submodule), an emulator of
@@ -49,7 +56,7 @@ Minimap ("Minimap" in the map chooser, off by default, or `-m` / `--minimap`): t
 the map semi-transparent in the bottom right corner, each cell in its colour and darker where it
 is low, with a square in a colour of its own and the number of each car (in the game's font) where
 its reference point is; x is to the right and y down, so a camera turned to yaw 0 looks up the
-minimap. It is drawn over the game's picture with the SDL renderer (`host/minimap.cpp`), so the
+minimap. It is drawn over the game's picture through ImGui (`host/minimap.cpp`), so the
 game's picture and the tests do not change.
 
 Without a map directory, `terep2` first opens a map chooser (Dear ImGui): the directories
@@ -136,6 +143,8 @@ host/
   host.hpp      what the hosts share
   common.cpp    64 KB segments, creating the data segment, time step, case-insensitive file opening
   sdl_main.cpp  SDL2 host
+  gui.cpp       its window: one OpenGL 3.3 core context, with ImGui (OpenGL3 backend) on it
+  renderer_api.hpp  what an external OpenGL renderer gets: the context, the map's files and layers
   launcher.cpp  map chooser (Dear ImGui) shown when no map is given
   voxel_preview.cpp  the chooser's preview: the map's terrain in voxel space
   pcx.cpp       PCX reader for the preview (separate from the game's)

@@ -3,24 +3,22 @@
  * game's palette), darker where it is low, x to the right and y down, as
  * the map is laid out (a camera with yaw 0 looks up the picture).  A car
  * is a square in its own colour at its reference point (where the camera
- * of F1 sits), with its number next to it in the game's font.
+ * of F1 sits), with its number next to it in the game's font.  All of it
+ * goes through an ImGui draw list over the game's picture.
  */
 #include <cstdio>
 #include "host.hpp"
 #include "minimap.hpp"
 
-static const SDL_Color CAR_COLOURS[10] = {
-    { 255, 60, 60, 255 }, { 255, 230, 40, 255 }, { 60, 220, 255, 255 }, { 255, 80, 255, 255 },
-    { 80, 255, 90, 255 }, { 255, 150, 30, 255 }, { 255, 255, 255, 255 }, { 120, 120, 255, 255 },
-    { 180, 255, 180, 255 }, { 255, 180, 200, 255 },
+static const ImU32 CAR_COLOURS[10] = {
+    IM_COL32(255, 60, 60, 255), IM_COL32(255, 230, 40, 255), IM_COL32(60, 220, 255, 255), IM_COL32(255, 80, 255, 255),
+    IM_COL32(80, 255, 90, 255), IM_COL32(255, 150, 30, 255), IM_COL32(255, 255, 255, 255), IM_COL32(120, 120, 255, 255),
+    IM_COL32(180, 255, 180, 255), IM_COL32(255, 180, 200, 255),
 };
-constexpr Uint8 MAP_ALPHA = 150;        // about 60 %
+constexpr int MAP_ALPHA = 150;          // about 60 %
 
-Minimap::Minimap(SDL_Renderer *ren) : ren(ren)
+Minimap::Minimap()
 {
-    map = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, 256, 256);
-    if (!map)
-        return;
     static uint32_t pixels[256 * 256];
     for (int i = 0; i < 256 * 256; i++) {
         const uint8_t *rgb = host_palette(colormap()[i]);
@@ -28,52 +26,40 @@ Minimap::Minimap(SDL_Renderer *ren) : ren(ren)
         pixels[i] = 0xff000000u | (uint32_t)(rgb[2] * light >> 8) << 16 |
                     (uint32_t)(rgb[1] * light >> 8) << 8 | (uint32_t)(rgb[0] * light >> 8);
     }
-    SDL_UpdateTexture(map, nullptr, pixels, 256 * 4);
-    SDL_SetTextureBlendMode(map, SDL_BLENDMODE_BLEND);
-    SDL_SetTextureAlphaMod(map, MAP_ALPHA);
-}
-
-Minimap::~Minimap()
-{
-    SDL_DestroyTexture(map);
+    map.upload(pixels, 256, 256, false);
 }
 
 // In the game's own font (the glyphs in the data segment: columns, bit 0 at the top).
-void Minimap::text(const char *s, int x, int y, int px, SDL_Color c) const
+void Minimap::text(ImDrawList *dl, const char *s, float x, float y, float px, ImU32 c) const
 {
-    SDL_SetRenderDrawColor(ren, c.r, c.g, c.b, 255);
     for (; *s; s++, x += px) {
         const uint8_t *col = &G->font_glyphs[G->font_offset[(uint8_t)*s & 0x7f]];
         for (; *col; col++, x += px)
             for (int row = 0; row < 5; row++)
-                if (*col >> row & 1) {
-                    SDL_Rect r = { x, y + row * px, px, px };
-                    SDL_RenderFillRect(ren, &r);
-                }
+                if (*col >> row & 1)
+                    dl->AddRectFilled(ImVec2(x, y + row * px), ImVec2(x + px, y + (row + 1) * px), c);
     }
 }
 
-void Minimap::draw(int w, int h) const
+void Minimap::draw(ImDrawList *dl, float x0, float y0, float k, int w, int h) const
 {
-    if (!map)
-        return;
+    // laid out in the game's pixels, then put on the window
     const int size = h * 3 / 10, margin = h / 50;
-    const SDL_Rect area = { w - size - margin, h - size - margin, size, size };
-    SDL_RenderCopy(ren, map, nullptr, &area);
+    const float ax = x0 + (w - size - margin) * k, ay = y0 + (h - size - margin) * k, as = size * k;
+    dl->AddImage(map.id(), ImVec2(ax, ay), ImVec2(ax + as, ay + as), ImVec2(0, 0), ImVec2(1, 1),
+                 IM_COL32(255, 255, 255, MAP_ALPHA));
 
     const int mark = size / 80 > 1 ? size / 80 : 1, px = h / 200 > 1 ? h / 200 : 1;   // mark: half the square
     for (int i = 0; i < G->num_cars; i++) {
         const Pos &p = car_get(i).ref_vertex().pos;
-        int x = area.x + (int)((p.x.raw >> 8) * (uint64_t)size >> 24);   // 8.24 cells -> pixels
-        int y = area.y + (int)((p.y.raw >> 8) * (uint64_t)size >> 24);
-        SDL_Color c = CAR_COLOURS[i % 10];
-        SDL_Rect frame = { x - mark - 1, y - mark - 1, 2 * mark + 3, 2 * mark + 3 }, dot = { x - mark, y - mark, 2 * mark + 1, 2 * mark + 1 };
-        SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
-        SDL_RenderFillRect(ren, &frame);
-        SDL_SetRenderDrawColor(ren, c.r, c.g, c.b, 255);
-        SDL_RenderFillRect(ren, &dot);
+        float x = ax + (float)((p.x.raw >> 8) * (uint64_t)size >> 24) * k;  // 8.24 cells -> pixels
+        float y = ay + (float)((p.y.raw >> 8) * (uint64_t)size >> 24) * k;
+        ImU32 c = CAR_COLOURS[i % 10];
+        dl->AddRectFilled(ImVec2(x - (mark + 1) * k, y - (mark + 1) * k), ImVec2(x + (mark + 2) * k, y + (mark + 2) * k),
+                          IM_COL32(0, 0, 0, 255));
+        dl->AddRectFilled(ImVec2(x - mark * k, y - mark * k), ImVec2(x + (mark + 1) * k, y + (mark + 1) * k), c);
         char n[4];
         snprintf(n, sizeof n, "%d", i + 1);
-        text(n, x + mark + 2 * px, y - 2 * px, px, c);
+        text(dl, n, x + (mark + 2 * px) * k, y - 2 * px * k, px * k, c);
     }
 }
