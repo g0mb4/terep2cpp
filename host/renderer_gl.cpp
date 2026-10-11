@@ -35,9 +35,11 @@
         vv * scale;        \
     })
 
-    #define F_UV(_val) ({ \
-        float vv = _val;   \
-        vv / 65535.0f;     \
+    #define F_UV(u, v, _raw) ({ \
+        uint32_t uraw = (_raw); \
+        float scale = 1.0f / 65535.0f;      \
+        u = (float)(uraw & 0xFFFF) * scale; \
+        v = (float)(uraw >> 16   ) * scale; \
     })
 
 // rzCreateWindow makes an OpenGL context of its own on the host's window and
@@ -99,10 +101,13 @@ bool opengl_start()
 
     }
 
-    rzSetCameraTarget(ctx, carros[0].id, 0); //TODO get the actual vertex
+    rzSetCameraTarget(ctx, carros[0].id, carros[0].camera_pt); //TODO get the actual vertex
 
     updateCars();
-    //TODO continuacao
+
+    rzSetBackgroundColor(ctx, 255);
+    
+    //TODO one more error checking here
     
     return true;
 #else
@@ -118,10 +123,6 @@ static void game_keys()
     case 0x0f:                              // Tab: next car for view 1
         if (++G->player_car[0] >= (uint16_t)G->num_cars)
             G->player_car[0] = 0;
-        break;
-    case 0x10:                              // Q: next car for view 2
-        if (++G->player_car[1] >= (uint16_t)G->num_cars)
-            G->player_car[1] = 0;
         break;
     case 0x1a:                              // [ and ]: gravity
         G->gravity += 50;
@@ -143,7 +144,9 @@ bool opengl_frame(int win_w, int win_h, PictureRect *where)
 
     #ifdef TEREP2_GLR
         use_lib();
+        //TODO update terrain
         updateCars();
+        //TODO sprites!
         rzRender(ctx);
         use_host();
     #endif
@@ -182,12 +185,22 @@ static void updateCars(){
         for(int i =0; i< n; i++){
             auto p = car.points[i].pos;
 
+            //prevents underflow related graphical glitches,
+            //most notable when the car gets upside down in a low part of the map
+            auto z = p.z.raw < 0xfe000000 ? p.z.raw : 0;
+
             ptrs[i].x = F_8_24(p.x.raw);
             ptrs[i].y = F_8_24(p.y.raw);
-            ptrs[i].z = F_8_24(p.z.raw);
+            ptrs[i].z = F_8_24(z);
         }
 
-        //TODO wheels, steering
+        //TODO review this constant, the limits are 45 deg
+        float steering = (float)car.steer.raw * -0.0001f;
+        rzUpdateObjectWheels(ctx, id, steering);
+
+        float spd = F_8_24(car.wheel_speed[0]);
+        rzSetObjectWheelSpin(ctx, id, spd);
+
         rzUpdateObjectVertices(ctx, id, ptrs);
     }
 }
@@ -204,7 +217,15 @@ static void loadCar(int i, std::string cpcx){
         rzLoadObjectTexture(ctx, idCar, cpcx.c_str());
     }
 
+    int wi = 0;
+
     for (const auto &o : car.model_ops){
+        if(o.op == 1){//pixel
+            //this doesnt feel right...
+            carros[i].camera_pt = o.p[0] >> 1;
+            continue;
+        }
+
         if(o.op == 4){ //flat polygon
             auto color = o.word & 0xff;
             auto pts = o.outline;
@@ -230,7 +251,7 @@ static void loadCar(int i, std::string cpcx){
             }
 
             if(color == 240){
-                //TODO see if there is a single tone or various
+                //TODO handle all the different tones
                 rzAddObjectTranslucentPolygon(ctx, idCar, idxs, n, 8);
             }else{
                 rzAddObjectPolygon(ctx, idCar, idxs, n, color);
@@ -250,15 +271,52 @@ static void loadCar(int i, std::string cpcx){
                 uint32_t attr = v.attr;
                 
                 vtx[i].index = v.point >> 1;
-                vtx[i].u = F_UV(attr & 0xFFFF);
-                vtx[i].v = F_UV(attr >> 16);
-                
+                F_UV(vtx[i].u, vtx[i].v, attr);                
             }
             
             rzAddObjectTexturedPolygon(ctx, idCar, vtx, n);
+            continue;
+        }
+        if(o.op == 10){
+            //will be actually handled below
+            wi++;
+            continue;
         }
 
         printf("unhandled: %d\n", o.op);
+    }
+
+    if(wi == 4){
+        RzWheel wee[4] = {0};
+
+        int widx = 0;
+        RzWheelFace f, b;
+        for (const auto &w : car.model_ops){
+            if(w.op != 10){
+                continue;
+            }
+            auto pi = w.p[0] >> 1;
+            auto p = car_get(i).points[pi];
+
+            wee[widx].hubVertex = pi;
+            wee[widx].front = p.wheel != 1;
+            wee[widx].diameter = (float)p.radius / 150.0f;
+
+            if(widx == 0){
+                F_UV(f.u0, f.v0, w.views[0].uv[0]);
+                F_UV(f.u1, f.v1, w.views[0].uv[2]);
+                
+                F_UV(b.u0, b.v0, w.views[8].uv[0]);
+                F_UV(b.u1, b.v1, w.views[8].uv[2]);
+            }
+            
+            widx++;
+        }
+
+        rzSetObjectWheels(ctx, idCar, wee);
+        rzSetObjectWheelFaces(ctx, idCar, &f, &b);
+    }else{
+        printf("WAT? %d wheels? HOW?\n", wi);
     }
 }
 
