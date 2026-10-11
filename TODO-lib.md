@@ -15,11 +15,14 @@ existe no host está em `host/renderer_api.hpp` (contexto, arquivos do mapa, cam
 - [ ] Core profile: nada de pipeline fixo (`glBegin`, matrizes do GL); funções além do GL 1.1
       precisam de loader. O ImGui tem o loader interno dele, só para ele; a lib traz o seu
       (glad, epoxy...) ou carrega pelo `SDL_GL_GetProcAddress`.
-- [ ] Encaixe em `run()` (`host/sdl_main.cpp`): onde hoje o quadro por software vira textura
-      (`picture.upload` + `AddImage`), chamar a lib (entre `gui_begin()` e `gui_end()`, antes do
-      `ImGui::Render`, ou com um callback de draw list), e não chamar `game_frame()`.
-- [ ] Escolher o renderizador: flag (ex. `-r gl`) e um combo no seletor; o padrão continua o por
-      software.
+- [x] Encaixe: `host/renderer_gl.cpp` (`opengl_start`, `opengl_frame`, `opengl_stop`), chamado
+      pelo `run()` entre `gui_begin()` e `gui_end()`; as chamadas da lib vão nas linhas `LIB:`.
+      O `gui_begin()` limpa a tela, então o que a lib desenha não é apagado.
+- [x] Escolher o renderizador: combo "Renderer" no seletor e `-r software|opengl`; o padrão é o
+      por software. O `opengl` só existe com `make sdl GLR=1 GLR_DIR=... GLR_LIB=...`.
+- [ ] Trocar as linhas `LIB:` pelas chamadas reais: `#include` do header, init com
+      `gui_window()`/`gui_context()`/`map_files(".")`/`map_layers()`, o draw a cada quadro, o
+      shutdown.
 - [ ] Alternativas, se a lib não puder dividir o contexto: dois contextos na mesma janela com
       `SDL_GL_SHARE_WITH_CURRENT_CONTEXT` e `SDL_GL_MakeCurrent` + `glFlush` a cada troca, ou a
       lib desenhando num FBO que o host mostra como textura.
@@ -43,17 +46,14 @@ existe no host está em `host/renderer_api.hpp` (contexto, arquivos do mapa, cam
 
 ## O que o `game_frame()` faz e deixa de ser feito
 
-- [ ] Som: chamar `engine_sound(G->player_car[0], 0)` a cada quadro de 60 Hz (e
-      `engine_sound(G->player_car[1], 1)` com a tela dividida), como o original.
-- [ ] Teclas tratadas no `game_frame()`, a tratar no host quando ele não for chamado:
-      Tab / Q (`G->player_car[0/1]`: qual carro cada jogador segue, que também decide quem pula
-      com 1/2 e o som do motor), `[` / `]` (gravidade, estado da física), F9 (tela dividida),
-      F1–F6, F10 e o numpad (câmeras, que a lib substitui pela dela).
-- [ ] O `keys[0]` (última tecla) é zerado pelo `game_frame()`; sem ele, quem tratar as teclas
-      zera.
+- [x] Som: `opengl_frame` chama `engine_sound(G->player_car[0], 0)` a cada quadro de 60 Hz (e
+      o `[1], 1` com a tela dividida), como o original.
+- [x] Teclas que mudam o jogo, tratadas pelo host no modo OpenGL: Tab / Q (`G->player_car`),
+      `[` / `]` (gravidade), F9 (tela dividida); o `keys[0]` é zerado ali.
+- [ ] F1–F6, F10 e o numpad (câmeras e neblina do original): a lib decide o que fazer.
 
 ## Build
 
-- [ ] `Makefile`: variável para a lib (ex. `make sdl GLR=caminho/da/lib`) com o `.h` e o `.a`, e
-      o loader dela. O `terep2` sem a lib continua compilando sem dependência nova
-      (`GL_LIBS`: `-lGL` no Linux, `-lopengl32` no Windows).
+- [x] `Makefile`: `make sdl GLR=1 GLR_DIR=<include> GLR_LIB="<.a e o que ele precisar>"` (apagar
+      o `terep2` antes, porque mudar essas variáveis não força recompilar). Sem `GLR`, o `terep2`
+      compila sem dependência nova (`GL_LIBS`: `-lGL` no Linux, `-lopengl32` no Windows).

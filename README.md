@@ -26,6 +26,7 @@ make test       # runs the recorded scenarios and compares them with the referen
 ./terep2 -E fix-ice-bug  # turns on an extra option (-E all: every one), see below
 ./terep2 -n       # (--no-sound) no sound: the AdLib emulator is not even started
 ./terep2 -m       # (--minimap) the map and the cars in the bottom right corner
+./terep2 -r opengl  # (--renderer) the external OpenGL renderer, if built in (see below)
 ```
 
 C++17 with GNU extensions (`__attribute__((packed))`, `-fwrapv` and `#embed`), so it builds with
@@ -42,8 +43,16 @@ Window: the SDL host owns one OpenGL 3.3 core context (`host/gui.cpp`). The map 
 game's picture (the software renderer's frame, as a texture, scaled to the window keeping its
 shape) and the minimap all go through Dear ImGui on it. An external OpenGL renderer can draw into
 the same context; `host/renderer_api.hpp` gives it the context, the real paths of the map's files
-(`map_files()`) and the map's height and tile layers (`map_layers()`). What is still to do for it
-is in [TODO-lib.md](TODO-lib.md).
+(`map_files()`) and the map's height and tile layers (`map_layers()`). The renderer is chosen in
+the map chooser ("Renderer") or with `-r`: `software` (the default, the game's own picture) or
+`opengl`, which is only there when the host is built with the library:
+
+    rm -f terep2 && make sdl GLR=1 GLR_DIR=its/include GLR_LIB="path/to/its.a ..."
+
+(remove `terep2` first: changing these variables does not make it rebuild). The library's calls go
+in `host/renderer_gl.cpp`, at the lines marked `LIB:`; in that mode `game_frame()` is not called,
+so the host plays the engine sound and handles Tab, Q, `[`, `]` and F9 itself. What is still to do
+for it is in [TODO-lib.md](TODO-lib.md).
 
 Sound: the game writes the AdLib (OPL2) registers as the original did to ports 388h/389h
 (`src/sound.cpp`: an engine voice per view and the crash effect); the SDL host plays them through
@@ -145,6 +154,8 @@ host/
   sdl_main.cpp  SDL2 host
   gui.cpp       its window: one OpenGL 3.3 core context, with ImGui (OpenGL3 backend) on it
   renderer_api.hpp  what an external OpenGL renderer gets: the context, the map's files and layers
+  game_renderer.cpp the renderers to choose from; renderer_sw.cpp (the game's picture),
+                renderer_gl.cpp (the external library, built with GLR=1)
   launcher.cpp  map chooser (Dear ImGui) shown when no map is given
   voxel_preview.cpp  the chooser's preview: the map's terrain in voxel space
   pcx.cpp       PCX reader for the preview (separate from the game's)

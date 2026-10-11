@@ -13,8 +13,8 @@ void gui_close();
 SDL_Window *gui_window();
 SDL_GLContext gui_context();
 
-// One frame: gui_begin, then ImGui calls (and any GL drawing before
-// gui_end), then gui_end, which draws ImGui over it and swaps.
+// One frame: gui_begin (clears the window), then ImGui calls and any GL
+// drawing, then gui_end, which draws ImGui over it and swaps.
 void gui_begin();
 void gui_end();
 

@@ -63,6 +63,11 @@ void gui_event(const SDL_Event &e)
 
 void gui_begin()
 {
+    int w, h;                                   // cleared here: a renderer draws before gui_end
+    SDL_GL_GetDrawableSize(window, &w, &h);
+    glViewport(0, 0, w, h);
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
@@ -71,11 +76,6 @@ void gui_begin()
 void gui_end()
 {
     ImGui::Render();
-    int w, h;
-    SDL_GL_GetDrawableSize(window, &w, &h);
-    glViewport(0, 0, w, h);
-    glClearColor(0, 0, 0, 1);
-    glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     SDL_GL_SwapWindow(window);
 }

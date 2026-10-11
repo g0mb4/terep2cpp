@@ -25,7 +25,13 @@ GL_LIBS  := -lopengl32
 else
 GL_LIBS  := -lGL
 endif
-SDL_HOST := host/sdl_main.cpp host/launcher.cpp host/voxel_preview.cpp host/pcx.cpp host/opl_sound.cpp host/minimap.cpp host/gui.cpp host/renderer_api.cpp
+# The external OpenGL renderer (TODO-lib.md):
+#   make sdl GLR=1 GLR_DIR=its/include GLR_LIB="path/to/lib.a and what it needs"
+ifdef GLR
+GLR_FLAGS := -DTEREP2_GLR $(if $(GLR_DIR),-I$(GLR_DIR))
+endif
+SDL_HOST := host/sdl_main.cpp host/launcher.cpp host/voxel_preview.cpp host/pcx.cpp host/opl_sound.cpp host/minimap.cpp host/gui.cpp host/renderer_api.cpp \
+            host/game_renderer.cpp host/renderer_sw.cpp host/renderer_gl.cpp
 IMGUI    := host/imgui
 IMGUI_OBJ := $(patsubst $(IMGUI)/%.cpp,build/imgui/%.o,$(addprefix $(IMGUI)/,imgui.cpp imgui_draw.cpp \
              imgui_tables.cpp imgui_widgets.cpp backends/imgui_impl_sdl2.cpp backends/imgui_impl_opengl3.cpp))
@@ -49,8 +55,8 @@ build/imgui/%.o: $(IMGUI)/%.cpp $(IMGUI)/imgui.h
 
 sdl: terep2
 terep2: $(GAME) $(HOST) $(SDL_HOST) $(wildcard host/*.hpp) $(HEADERS) $(IMGUI_OBJ) build/opl3.o
-	$(CXX) $(CXXFLAGS) $$(sdl2-config --cflags) -I$(IMGUI) -I$(IMGUI)/backends -I$(OPL3) -o $@ \
-		$(GAME) $(HOST) $(SDL_HOST) $(IMGUI_OBJ) build/opl3.o $$(sdl2-config --libs) $(GL_LIBS) -lm
+	$(CXX) $(CXXFLAGS) $(GLR_FLAGS) $$(sdl2-config --cflags) -I$(IMGUI) -I$(IMGUI)/backends -I$(OPL3) -o $@ \
+		$(GAME) $(HOST) $(SDL_HOST) $(IMGUI_OBJ) build/opl3.o $(GLR_LIB) $$(sdl2-config --libs) $(GL_LIBS) -lm
 
 test: terep2-headless
 	sh tests/run_tests.sh

@@ -9,6 +9,7 @@
 struct HostOptions {
     bool no_sound = false;          // "Disable sound": no audio device, no OPL emulator
     bool minimap = false;           // the map and the cars in the bottom right corner
+    int renderer = 0;               // index in game_renderers (game_renderer.hpp)
 };
 
 // Runs until the player picks a map (true, *map set) or closes the
