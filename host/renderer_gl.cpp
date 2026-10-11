@@ -28,6 +28,7 @@
     static void updateCars();
     static int isLine(uint16_t[], int);
     static void loadCar(int, std::string);
+    static void updateSprites();
 
     #define F_8_24(_val) ({ \
         const float scale = 1.0f / (float)(1 << 24); \
@@ -146,7 +147,7 @@ bool opengl_frame(int win_w, int win_h, PictureRect *where)
         use_lib();
         //TODO update terrain
         updateCars();
-        //TODO sprites!
+        updateSprites();
         rzRender(ctx);
         use_host();
     #endif
@@ -333,4 +334,32 @@ static int isLine(uint16_t vertx[], int n){
     }
     return cnt == 2;
 }
+
+static void updateSprites(){
+    auto n_sprites = G->particle_bytes / 28;
+
+    RzSprite spr[256];
+
+    for(int i = 0; i < n_sprites && i < 256; i++){
+        auto s = G->particles[i];
+        auto ds = &spr[i];
+        
+        ds->x = F_8_24(s.pos.x.raw);
+        ds->y = F_8_24(s.pos.y.raw);
+        ds->z = F_8_24(s.pos.z.raw);
+
+        ds->z += 0.01f; //add a small amount to z so the dont spawn half buried
+
+        //the game always sets the lifetime to 0x64 (100 in decimal)
+        //so we make the size inversely proportional to the lifetime, to make the particle expand
+        //110 so they begin visible and not 0 size
+        int sz = 110 - s.life;
+
+        ds->size = (float)sz * 0.005f;
+        ds->color = s.kind; //kinda wrong... TODO improve
+    }
+
+    rzSetSprites(ctx,spr,n_sprites);
+}
+
 #endif
