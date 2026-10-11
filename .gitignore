@@ -10,6 +10,7 @@ main.bin
 main.map
 maincode_int.asm
 
+host/gl_renderer/*.a
 
 # Frame dumps and scratch output
 *.ppm

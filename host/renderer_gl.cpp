@@ -13,7 +13,8 @@
 #include "renderer_api.hpp"
 
 #ifdef TEREP2_GLR
-// LIB: #include the library's header here (its directory is GLR_DIR).
+    #include "gl_renderer/renderizeitor.h"
+    static RzContext* ctx;
 #endif
 
 bool opengl_start()
@@ -23,7 +24,26 @@ bool opengl_start()
     MapLayers layers = map_layers();        // height and tile, 256 x 256, change while playing
     (void)files;
     (void)layers;
-    // LIB: init with gui_window(), gui_context(), files and layers
+
+    auto w = gui_window();
+
+    int ok = rzCreateWindow(w, &ctx);
+    if(ok != RZ_OK){
+        return false;
+    }
+    rzSetHeightmap(ctx, layers.height, 256,256);
+    rzLoadTileAtlas(ctx, files.maptex.c_str());
+    rzSetTileMap(ctx, layers.tile, 256,256);
+
+    rzLoadFallbackTexture(ctx,files.textures.c_str());
+
+    if (rzGetError(ctx, NULL) != RZ_OK){
+        //TODO actually say the error
+        return false;
+    }
+
+    //TODO continuacao
+    
     return true;
 #else
     return false;
@@ -60,8 +80,11 @@ bool opengl_frame(int win_w, int win_h, PictureRect *where)
 {
     game_keys();
     engine_sound(G->player_car[0], 0);      // what draw_view does for the sound
-    if (G->split_screen)
-        engine_sound(G->player_car[1], 1);
+
+    #ifdef TEREP2_GLR
+        rzRender(ctx);
+    #endif
+    
     // LIB: draw the frame (cars[i].points, map_layers(), ...) on the whole window,
     // into framebuffer 0, without swapping
     *where = { win_w - screen_w() * ((float)win_h / screen_h()), 0, (float)win_h / screen_h() };
@@ -71,6 +94,6 @@ bool opengl_frame(int win_w, int win_h, PictureRect *where)
 void opengl_stop()
 {
 #ifdef TEREP2_GLR
-    // LIB: shut down (before the game's memory is freed)
+    rzDestroy(ctx);
 #endif
 }
