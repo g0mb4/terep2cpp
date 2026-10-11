@@ -102,7 +102,7 @@ bool opengl_start()
 
     }
 
-    rzSetCameraTarget(ctx, carros[0].id, carros[0].camera_pt); //TODO get the actual vertex
+    rzSetCameraTarget(ctx, carros[0].id, carros[0].camera_pt);
 
     updateCars();
 
@@ -180,6 +180,7 @@ static void updateCars(){
 
         int n = carros[ci].n_points;
         auto car = car_get(ci);
+        carros[ci].camera_pt = car.ref_index;
 
         RzVertex ptrs[n];
 
@@ -221,12 +222,6 @@ static void loadCar(int i, std::string cpcx){
     int wi = 0;
 
     for (const auto &o : car.model_ops){
-        if(o.op == 1){//pixel
-            //this doesnt feel right...
-            carros[i].camera_pt = o.p[0] >> 1;
-            continue;
-        }
-
         if(o.op == 4){ //flat polygon
             auto color = o.word & 0xff;
             auto pts = o.outline;
