@@ -11,6 +11,8 @@
 #include <math.h>
 #include "terep.hpp"
 
+int broke_some_ice = 0;
+
 /* ------------------------------------------------------------------------
  * Controls
  * ---------------------------------------------------------------------- */
@@ -617,8 +619,10 @@ static void particles_update()
                 /* bug of the original (fixed with -E fix-ice-bug): at height 0
                  * the cell wraps to 255, a pillar that throws cars up */
                 uint8_t &h = heightmap()[(uint16_t)(((uint16_t)(y + 0x80) & 0xff00) | ((uint16_t)(x + 0x80) >> 8))];
-                if (h || !extra_options.fix_ice_bug)
+                if (h || !extra_options.fix_ice_bug){
                     h--;
+                    broke_some_ice = 1;
+                }
                 p.kind = Particle::DUST;
                 p.vel = { 0, 0, 10000 };
             }

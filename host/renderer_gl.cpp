@@ -43,6 +43,8 @@
         v = (float)(uraw >> 16   ) * scale; \
     })
 
+    extern int broke_some_ice;
+
 // rzCreateWindow makes an OpenGL context of its own on the host's window and
 // leaves it current, and rzDestroy deletes it.  The host (ImGui: the map
 // chooser, the minimap) draws with its own context, so the library's is
@@ -145,7 +147,11 @@ bool opengl_frame(int win_w, int win_h, PictureRect *where)
 
     #ifdef TEREP2_GLR
         use_lib();
-        //TODO update terrain
+        if(broke_some_ice){
+            rzUpdateTerrain(ctx);
+            broke_some_ice = 0;
+        }
+        
         updateCars();
         updateSprites();
         rzRender(ctx);
