@@ -10,6 +10,14 @@ existe no host está em `host/renderer_api.hpp` (contexto, arquivos do mapa, cam
 - [ ] A lib aceita a janela e o contexto do host (`gui_window()`, `gui_context()`) em vez de
       criar os seus, desenha no framebuffer 0 e **não** chama `SDL_GL_SwapWindow` (o host desenha
       o ImGui por cima e faz o swap em `gui_end()`).
+- [x] Hoje o `rzCreateWindow` cria um contexto próprio na janela do host e o deixa corrente, e o
+      `rzDestroy` o apaga: depois do Esc não sobrava contexto corrente, e o seletor não aparecia
+      (ficava a última imagem da lib). O `host/renderer_gl.cpp` agora guarda o contexto da lib e
+      só o deixa corrente em volta das chamadas dela (`use_lib()` / `use_host()`, com `glFlush`
+      entre os dois), voltando sempre ao do host; e o host pede `SDL_GL_DEPTH_SIZE` 24. Toda
+      chamada nova `rz*` precisa ficar entre `use_lib()` e `use_host()`. Alternativa melhor, na
+      lib: usar o contexto que já estiver corrente, ou ao menos devolver o que estava corrente
+      ao sair de `rzCreateWindow`/`rzDestroy`.
 - [ ] No fim do quadro a lib deixa o framebuffer 0 ligado. O backend OpenGL3 do ImGui salva e
       restaura o resto do estado que usa.
 - [ ] Core profile: nada de pipeline fixo (`glBegin`, matrizes do GL); funções além do GL 1.1
