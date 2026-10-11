@@ -24,11 +24,13 @@
     };
 
     carrodef_s carros[5];
+    int currTgt = 0;
 
     static void updateCars();
     static int isLine(uint16_t[], int);
     static void loadCar(int, std::string);
     static void updateSprites();
+    static void updateCamDists();
 
     #define F_8_24(_val) ({ \
         const float scale = 1.0f / (float)(1 << 24); \
@@ -105,6 +107,7 @@ bool opengl_start()
 
     }
 
+    currTgt = 0;
     rzSetCameraTarget(ctx, carros[0].id, carros[0].camera_pt);
 
     updateCars();
@@ -124,18 +127,37 @@ bool opengl_start()
 static void game_keys()
 {
     switch (keys[0]) {
-    case 0x0f:                              // Tab: next car for view 1
-        if (++G->player_car[0] >= (uint16_t)G->num_cars)
+    case 0x0f:{                             // Tab: next car for view 1
+        G->player_car[0]++;
+        if (G->player_car[0] >= (uint16_t)G->num_cars){
             G->player_car[0] = 0;
+        }
+        G->player_car[1] = G->player_car[0];
+        #ifdef TEREP2_GLR
+        auto c = carros[G->player_car[0]];
+        rzSetCameraTarget(ctx, c.id, c.camera_pt);
+        currTgt = c.id;
+        #endif
         break;
+    }
+    case 63:{ //F5: overview
+        #ifdef TEREP2_GLR
+        if(currTgt == -1){
+            auto c = carros[G->player_car[0]];
+            rzSetCameraTarget(ctx, c.id, c.camera_pt);
+            currTgt = c.id;
+        }else{
+            rzSetCameraTarget(ctx, -1, -1);
+            currTgt = -1;
+        }
+        #endif
+        break;
+    }
     case 0x1a:                              // [ and ]: gravity
         G->gravity += 50;
         break;
     case 0x1b:
         G->gravity -= 50;
-        break;
-    case 0x43:                              // F9: split screen
-        G->split_screen ^= 1;
         break;
     }
     keys[0] = 0;
@@ -155,6 +177,7 @@ bool opengl_frame(int win_w, int win_h, PictureRect *where)
         
         updateCars();
         updateSprites();
+        updateCamDists();
         rzRender(ctx);
         use_host();
     #endif
@@ -362,6 +385,29 @@ static void updateSprites(){
     }
 
     rzSetSprites(ctx,spr,n_sprites);
+}
+
+static void updateCamDists(){
+    static float camD = 3.0f;
+    static float camH = 1.0f;
+
+    if((keys[78] & 0x80) == 0){//plus
+        camH += 0.04f;
+        camH = fminf(camH, 12.0f);
+    }else if((keys[74] & 0x80) == 0){ //minus
+        camH -= 0.04f;
+        camH = fmaxf(camH, 0.5f);
+    }else if((keys[53] & 0x80) == 0){  // /
+        camD += 0.04f;
+        camD = fminf(camD, 10.0f);
+    }else if((keys[55] & 0x80) == 0){ //asterisk
+        camD -= 0.04f;
+        camD = fmaxf(camD, 0.5f);
+    } else{
+        return;
+    }
+
+    rzSetCameraFollow(ctx, camD, camH, 0.08f);
 }
 
 #endif
