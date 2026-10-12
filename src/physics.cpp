@@ -191,13 +191,13 @@ void Car::update_mid()
  * Springs
  * ---------------------------------------------------------------------- */
 
-/* CVTSS2SI: round to nearest, out-of-range gives 0x80000000. */
+/* CVTSS2SI: round to nearest, value is clamped, if its a NaN, God help us. */
 static int32_t float_to_i32(double f)
 {
     f = fmin(f, 2147483647.0);
     f = fmax(f, -2147483648.0);
 
-    return (int32_t)f;
+    return (int32_t)lrint(f);
 }
 
 /* Split the impulse between both ends; the high byte of the flags makes
