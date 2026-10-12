@@ -27,3 +27,4 @@ host/gl_renderer/*.a
 !/docs/alta_resolucao.gif
 
 .claude
+.vscode
