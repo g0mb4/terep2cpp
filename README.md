@@ -20,6 +20,7 @@ git submodule update --init   # Dear ImGui and Nuked-OPL3 (host/imgui, host/Nuke
 make            # terep2-headless: test host, no dependencies
 make sdl        # terep2: playable SDL2 + OpenGL 3.3 version (needs libsdl2-dev, OpenGL and the submodules)
 make test       # runs the recorded scenarios and compares them with the reference
+make -j8 all sdl  # in parallel: each source is its own object in build/, rebuilt when its headers change
 ./terep2        # opens the map chooser, starting in the current directory
 ./terep2 data/Asphalt
 ./terep2 -s 4     # renders at 1280x800 (scale 1 to 8)
@@ -47,9 +48,9 @@ the same context; `host/renderer_api.hpp` gives it the context, the real paths o
 the map chooser ("Renderer") or with `-r`: `software` (the default, the game's own picture) or
 `opengl`, which is only there when the host is built with the library:
 
-    rm -f terep2 && make sdl GLR=1 GLR_DIR=its/include GLR_LIB="path/to/its.a ..."
+    make sdl GLR=1 GLR_DIR=its/include GLR_LIB="path/to/its.a ..."
 
-(remove `terep2` first: changing these variables does not make it rebuild). The library's calls go
+(changing these variables rebuilds what they touch, nothing has to be removed). The library's calls go
 in `host/renderer_gl.cpp`, at the lines marked `LIB:`; in that mode `game_frame()` is not called,
 so the host plays the engine sound and handles Tab, Q, `[`, `]` and F9 itself. What is still to do
 for it is in [TODO-lib.md](TODO-lib.md).
