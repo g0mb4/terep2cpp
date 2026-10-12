@@ -371,6 +371,7 @@ static void updateSprites(){
     for(int i = 0; i < n_sprites && i < 256; i++){
         auto s = G->particles[i];
         auto ds = &spr[i];
+        ds[0] = {0};
         
         ds->x = F_8_24(s.pos.x.raw);
         ds->y = F_8_24(s.pos.y.raw);
@@ -383,9 +384,9 @@ static void updateSprites(){
         //110 so they begin visible and not 0 size
         int sz = 110 - s.life;
 
-        auto k = (uint8_t)s.kind >> 4;
+        auto k = G->smoke_sprite[(uint8_t)s.kind >> 4];
 
-        if((k & 0x2) || k == 8){ //see smoke_quad_of_kind and look at the patterns of zeros
+        if(k != 0x5a73){
             ds->type = RZ_SPRITE_DEBRIS;
             ds->color = s.kind;
         } else {
