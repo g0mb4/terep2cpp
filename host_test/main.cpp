@@ -18,8 +18,10 @@
  * ppmdir: write each frame as fNNNN.ppm there (only frame n with DUMP_FRAME=n)
  *
  *   terep2-headless [-E option]... -R recdir mapdir
+ *   terep2-headless [-E option]... -C recdir mapdir
  *
  * -R: replay a recording made with the Win16 port, at 1x (replay() below).
+ * -C: the same, only comparing (no name_new.pgm written).
  */
 #include <algorithm>
 #include <climits>
@@ -112,14 +114,15 @@ static bool read_pgm(const char *path, std::vector<uint8_t> *pixels)
 
 /* Replays recdir/record.txt, written by the Win16 port, on mapdir: one
  * action per line, called exactly as recorded:
+ *   (empty), # ...     nothing; the only lines allowed before the first init
  *   init               new data segment, game_init in mapdir
  *   physics            physics_tick
  *   render             game_frame
  *   handleKey: 0xcd    game_key (scancode, | 0x80 = released)
- *   frame: name.pgm    writes the frame buffer as recdir/novo_name.pgm (P5, as
- *                      the port does) and compares it with recdir/name.pgm
+ *   frame: name.pgm    writes the frame buffer as recdir/name_new.pgm (P5, as
+ *                      the port does; not if !save) and compares it with recdir/name.pgm
  * Returns 0 if every frame matched, 1 if not (or on errors). */
-static int replay(const char *rec, const char *mapdir)
+static int replay(const char *rec, const char *mapdir, bool save)
 {
     char dir[PATH_MAX], map[PATH_MAX];       // absolute: init changes to the map's directory
     if (!realpath(rec, dir) || !realpath(mapdir, map)) {
@@ -133,16 +136,15 @@ static int replay(const char *rec, const char *mapdir)
         return 1;
     }
     render_scale = 1;                       // the original's frame buffer
-    int renders = 0, same = 0, differ = 0, missing = 0, line_no = 0;
+    int renders = 0, same = 0, differ = 0, missing = 0;
     std::string first_diff;
     bool started = false;
     char line[512];
     while (fgets(line, sizeof line, in)) {
-        line_no++;
         line[strcspn(line, "\r\n")] = 0;
         int key;
         char name[400];
-        if (!*line) {
+        if (!*line || *line == '#') {       // empty or a comment
         } else if (!strcmp(line, "init")) {
             if (started)
                 host_free_game();
@@ -152,7 +154,7 @@ static int replay(const char *rec, const char *mapdir)
             }
             started = true;
         } else if (!started) {
-            fprintf(stderr, "record.txt:%d: \"%s\" before init\n", line_no, line);
+            fprintf(stderr, "%s before init\n", line);
             return 1;
         } else if (!strcmp(line, "physics")) {
             physics_tick();
@@ -163,14 +165,18 @@ static int replay(const char *rec, const char *mapdir)
             game_key((uint8_t)key);
         } else if (sscanf(line, "frame: %399s", name) == 1) {
             const uint8_t *scr = screen();
-            std::string mine = std::string(dir) + "/novo_" + name;
-            FILE *out = fopen(mine.c_str(), "wb");
-            if (out) {
-                fprintf(out, "P5\n#frame %d\n320 200\n255\n", renders);
-                fwrite(scr, 1, 320 * 200, out);
-                fclose(out);
-            } else
-                perror(mine.c_str());
+            if (save) {
+                std::string mine = std::string(dir) + "/" + name;
+                size_t dot = mine.rfind('.');
+                mine.insert(dot != std::string::npos && dot > mine.rfind('/') ? dot : mine.size(), "_new");
+                FILE *out = fopen(mine.c_str(), "wb");
+                if (out) {
+                    fprintf(out, "P5\n#frame %d\n320 200\n255\n", renders);
+                    fwrite(scr, 1, 320 * 200, out);
+                    fclose(out);
+                } else
+                    perror(mine.c_str());
+            }
             std::vector<uint8_t> orig;
             if (!read_pgm((std::string(dir) + "/" + name).c_str(), &orig)) {
                 printf("%s: original missing or unreadable\n", name);
@@ -208,33 +214,37 @@ int main(int argc, char **argv)
 {
     int a = 1;
     const char *pre = nullptr, *rec = nullptr;
+    bool save = true;
     for (; a + 1 < argc && argv[a][0] == '-'; a += 2) {
         std::string_view opt = argv[a];
         if (opt == "-s")
             render_scale = atoi(argv[a + 1]);
         else if (opt == "-p")
             pre = argv[a + 1];
-        else if (opt == "-R")
+        else if (opt == "-R" || opt == "-C") {
             rec = argv[a + 1];
+            save = opt == "-R";
+        }
         else if ((opt == "-E" || opt == "--extra-options") && !extra_option_enable(argv[a + 1])) {
             fprintf(stderr, "unknown option %s; known:", argv[a + 1]);
             for (int i = 0; i < extra_option_count; i++)
                 fprintf(stderr, " %s", extra_option_list[i].name);
             fprintf(stderr, " all\n");
             return 2;
-        } else if (opt != "-E" && opt != "--extra-options" && opt != "-p" && opt != "-R")
+        } else if (opt != "-E" && opt != "--extra-options" && opt != "-p" && opt != "-R" &&
+                   opt != "-C")
             break;
     }
     if (rec) {
         if (argc - a != 1) {
-            fprintf(stderr, "usage: %s [-E option]... -R recdir mapdir\n", argv[0]);
+            fprintf(stderr, "usage: %s [-E option]... -R|-C recdir mapdir\n", argv[0]);
             return 2;
         }
-        return replay(rec, argv[a]);
+        return replay(rec, argv[a], save);
     }
     if (argc - a < 2 || render_scale < 1 || render_scale > MAX_RENDER_SCALE) {
         fprintf(stderr, "usage: %s [-s 1..%d] [-E option]... [-p map:frames] mapdir frames [script] [ppmdir]\n"
-                        "       %s [-E option]... -R recdir mapdir\n",
+                        "       %s [-E option]... -R|-C recdir mapdir\n",
                 argv[0], MAX_RENDER_SCALE, argv[0]);
         return 2;
     }

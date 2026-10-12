@@ -271,8 +271,8 @@ the same output as a fresh process.
 
 Recordings made with the Win16 port are replayed with `terep2-headless -R recdir mapdir`.
 `recdir/record.txt` has one call per line (`init`, `physics`, `render`, `handleKey: 0xcd`,
-`frame: name.pgm`), made exactly as recorded at 1x. Other lines print `unhandled line: ...` and are skipped. Each `frame:` line saves the frame buffer as
-`recdir/novo_name.pgm` (P5, like the port's dumps) and prints how it compares with
+`frame: name.pgm`), made exactly as recorded at 1x. Empty lines and lines starting with `#` are skipped; before the first `init` nothing else is allowed (`... before init`, an error). After it, other lines print `unhandled line: ...` and are skipped. Each `frame:` line saves the frame buffer as
+`recdir/name_new.pgm` (P5, like the port's dumps; `-C` instead of `-R` only compares) and prints how it compares with
 `recdir/name.pgm`: the number of differing pixels and the rectangle around them. The last line
 sums it up, and the exit code is 1 if any frame differs or has no original.
 
