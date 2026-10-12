@@ -269,6 +269,13 @@ in the repository); the demo's cars only use six of them. It also plays 300 fram
 runs the scenario again in the same process (`terep2-headless -p map:frames`), which has to give
 the same output as a fresh process.
 
+Recordings made with the Win16 port are replayed with `terep2-headless -R recdir mapdir`.
+`recdir/record.txt` has one call per line (`init`, `physics`, `render`, `handleKey: 0xcd`,
+`frame: name.pgm`), made exactly as recorded at 1x. Other lines print `unhandled line: ...` and are skipped. Each `frame:` line saves the frame buffer as
+`recdir/novo_name.pgm` (P5, like the port's dumps) and prints how it compares with
+`recdir/name.pgm`: the number of differing pixels and the rectangle around them. The last line
+sums it up, and the exit code is 1 if any frame differs or has no original.
+
 ## Things found along the way
 
 Bugs and quirks of the original that were **kept** (they are commented in the code):
