@@ -371,13 +371,12 @@ static void updateSprites(){
     for(int i = 0; i < n_sprites && i < 256; i++){
         auto s = G->particles[i];
         auto ds = &spr[i];
-        ds[0] = {0};
         
-        ds->x = F_8_24(s.pos.x.raw);
-        ds->y = F_8_24(s.pos.y.raw);
-        ds->z = F_8_24(s.pos.z.raw);
-
-        ds->z += 0.01f; //add a small amount to z so the dont spawn half buried
+        ds[0] = {
+            .x = F_8_24(s.pos.x.raw),
+            .y = F_8_24(s.pos.y.raw),
+            .z = F_8_24(s.pos.z.raw),
+        };
 
         //the game always sets the lifetime to 0x64 (100 in decimal)
         //so we make the size inversely proportional to the lifetime, to make the particle expand
@@ -386,7 +385,7 @@ static void updateSprites(){
 
         auto k = G->smoke_sprite[(uint8_t)s.kind >> 4];
 
-        if(k != 0x5a73){
+        if(k != 0x5a73){//this will break if we move these things out of the "DS segment"
             ds->type = RZ_SPRITE_DEBRIS;
             ds->color = s.kind;
         } else {
@@ -399,6 +398,7 @@ static void updateSprites(){
         }
 
         ds->size = (float)sz * 0.005f;
+        ds->z += ds->size * 0.3f; //add a small amount to z proportional to the size, so the dont spawn buried
     }
 
     rzSetSprites(ctx,spr,n_sprites);
