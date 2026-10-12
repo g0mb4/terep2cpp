@@ -387,7 +387,12 @@ static void updateSprites(){
 
         if(k != 0x5a73){//this will break if we move these things out of the "DS segment"
             ds->type = RZ_SPRITE_DEBRIS;
+            ds->opacity = 1.0f;
             ds->color = s.kind;
+            if(s.life < 32){
+                float o = (float)s.life * 0.03125f;
+                ds->opacity = o;
+            }
         } else {
             ds->type = RZ_SPRITE_SMOKE;
             ds->opacity = 0.8f;
