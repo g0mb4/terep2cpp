@@ -383,8 +383,21 @@ static void updateSprites(){
         //110 so they begin visible and not 0 size
         int sz = 110 - s.life;
 
+        auto k = (uint8_t)s.kind >> 4;
+
+        if((k & 0x2) || k == 8){ //see smoke_quad_of_kind and look at the patterns of zeros
+            ds->type = RZ_SPRITE_DEBRIS;
+            ds->color = s.kind;
+        } else {
+            ds->type = RZ_SPRITE_SMOKE;
+            ds->opacity = 0.8f;
+            if(s.life < 50){
+                float o = (float)s.life * 0.016f;
+                ds->opacity = o;
+            }
+        }
+
         ds->size = (float)sz * 0.005f;
-        ds->color = s.kind; //kinda wrong... TODO improve
     }
 
     rzSetSprites(ctx,spr,n_sprites);
