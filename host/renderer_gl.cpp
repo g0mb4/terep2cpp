@@ -3,11 +3,13 @@
  * map and the cars its own way, with its own camera and textures, into the
  * host's OpenGL 3.3 core context; the game's own drawing (game_frame) is not
  * called, so what game_frame does besides drawing is done here: the engine
- * sound and the keys that change the game (Tab, Q, [, ], F9).
+ * sound, the keys that change the game (Tab, Q, [, ], F9) and the text.
  *
  * The calls into the library are marked LIB: they are compiled only with
  * the library (make sdl GLR=1 ...).  What else it will need: TODO-lib.md.
  */
+#include <string>
+#include "imgui.h"
 #include "game_renderer.hpp"
 #include "gui.hpp"
 #include "renderer_api.hpp"
@@ -64,8 +66,11 @@ static void use_host()
 }
 #endif
 
+static uint8_t banner_color;               // as game_frame's, which is not called here
+
 bool opengl_start()
 {
+    banner_color = 0;
 #ifdef TEREP2_GLR
     MapFiles files = map_files(".");        // real paths of the map's files
     MapLayers layers = map_layers();        // height and tile, 256 x 256, change while playing
@@ -121,6 +126,32 @@ bool opengl_start()
 #else
     return false;
 #endif
+}
+
+// game_frame's text, in ImGui's font:
+// at (x, y) of the original 320 x 200 screen, in palette colour colour.
+static void draw_text(const PictureRect &at, const char *s, int x, int y, uint8_t colour)
+{
+    std::string text;
+    for (; *s && *s != 13; s++)
+        if (*s == 27 && s[1])
+            s++;                            // a colour change: ignored
+        else
+            text += *s == 9 ? ' ' : *s;
+    const float px = at.k * render_scale;   // window pixels per pixel of the original
+    const uint8_t *c = host_palette(colour);
+    ImDrawList *dl = ImGui::GetForegroundDrawList();
+    dl->AddText(nullptr, 7.5f * px, ImVec2(at.x0 + x * px, at.y0 + (y - 2) * px), IM_COL32(c[0], c[1], c[2], 255),
+                text.c_str());
+}
+
+static void draw_texts(const PictureRect &at)
+{
+    draw_text(at, G->title_text, 10, 10, 15);
+    draw_text(at, G->subtitle_text, 100, 190, 15);
+    if (!extra_options.hide_banner)
+        draw_text(at, "GAMBIARRA FOREVER!", 5, 190, (uint8_t)(banner_color >> 2));
+    banner_color++;
 }
 
 // The keys game_frame would handle (keys[0] is the last key pressed); the
@@ -188,6 +219,7 @@ bool opengl_frame(int win_w, int win_h, PictureRect *where)
     // LIB: draw the frame (cars[i].points, map_layers(), ...) on the whole window,
     // into framebuffer 0, without swapping
     *where = { win_w - screen_w() * ((float)win_h / screen_h()), 0, (float)win_h / screen_h() };
+    draw_texts({ 0, 0, where->k });        // from the left edge, as the lib fills the window
     return true;
 }
 
