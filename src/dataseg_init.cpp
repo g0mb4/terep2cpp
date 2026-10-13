@@ -195,13 +195,15 @@ void dataseg_init()
         G->sin_table[i] = (int16_t)(v > 0x7fff ? 0x7fff : v);
     }
     /* atan(i / 256), i = 0..256, in binary angle units (0x10000 = 360 deg).
-     * The original's table was made with pi typed as 3.14169; with it every
-     * entry is the rounded atan, except 75: 2972.49989 here, a tie that the
-     * original's arithmetic rounded up.  The others are at least 3e-3 from a
-     * tie, so the libm's last bit cannot change them. */
-    for (int i = 0; i <= 256; i++)
-        G->atan_table[i] = (uint16_t)std::lround(std::atan(i / 256.0) * 32768 / 3.14169);
-    G->atan_table[75]++;
+     * Pi is wrong here so the table is identical to the original one
+     * Claude got very near the right wrong pi, but not quite, bateu na trave
+     * Lets be honest, the errors probably have another origin and not a wrongly typed pi
+     * my guess would be a single precision math library was used*/
+    for (int i = 0; i <= 256; i++){
+        const double m = 32768.0 / 3.141688765;
+        G->atan_table[i] = (uint16_t)std::lround(std::atan(i / 256.0) * m);
+    }
+
     init_font();
     memcpy(G->sfx_engine_patch, engine_patch, sizeof engine_patch);
     memcpy(G->sfx_hit_patch, hit_patch, sizeof hit_patch);
