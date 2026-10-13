@@ -4,3 +4,6 @@
 [submodule "host/Nuked-OPL3"]
 	path = host/Nuked-OPL3
 	url = https://github.com/nukeykt/Nuked-OPL3
+[submodule "host/renderizeitor"]
+	path = host/renderizeitor
+	url = https://github.com/harrison3000/renderizeitor

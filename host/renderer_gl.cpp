@@ -16,7 +16,7 @@
 
 #ifdef TEREP2_GLR
     #include <SDL_opengl.h>
-    #include "gl_renderer/renderizeitor.h"
+    #include "renderizeitor/include/renderizeitor.h"
     static RzContext* ctx;
 
     struct carrodef_s{
