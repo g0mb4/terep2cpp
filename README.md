@@ -18,14 +18,16 @@ that corrupts the title) and a crash of the original that the port does not repr
 ```sh
 git submodule update --init   # Dear ImGui and Nuked-OPL3 (host/imgui, host/Nuked-OPL3), for terep2
 make            # terep2-headless: test host, no dependencies
-make sdl        # terep2: playable SDL2 version (needs libsdl2-dev and the submodules)
+make sdl        # terep2: playable SDL2 + OpenGL 3.3 version (needs libsdl2-dev, OpenGL and the submodules)
 make test       # runs the recorded scenarios and compares them with the reference
+make -j8 all sdl  # in parallel: each source is its own object in build/, rebuilt when its headers change
 ./terep2        # opens the map chooser, starting in the current directory
 ./terep2 data/Asphalt
 ./terep2 -s 4     # renders at 1280x800 (scale 1 to 8)
 ./terep2 -E fix-ice-bug  # turns on an extra option (-E all: every one), see below
 ./terep2 -n       # (--no-sound) no sound: the AdLib emulator is not even started
 ./terep2 -m       # (--minimap) the map and the cars in the bottom right corner
+./terep2 -r opengl  # (--renderer) the external OpenGL renderer, if built in (see below)
 ```
 
 C++17 with GNU extensions (`__attribute__((packed))`, `-fwrapv` and `#embed`), so it builds with
@@ -38,6 +40,21 @@ map (or other options) can be picked. Each game starts from scratch: `game_init`
 everything the game keeps outside the data segment, and the host makes a new data segment and new
 segments (`host_free_game`).
 
+Window: the SDL host owns one OpenGL 3.3 core context (`host/gui.cpp`). The map chooser, the
+game's picture (the software renderer's frame, as a texture, scaled to the window keeping its
+shape) and the minimap all go through Dear ImGui on it. An external OpenGL renderer can draw into
+the same context; `host/renderer_api.hpp` gives it the context, the real paths of the map's files
+(`map_files()`) and the map's height and tile layers (`map_layers()`). The renderer is chosen in
+the map chooser ("Renderer") or with `-r`: `software` (the default, the game's own picture) or
+`opengl`, which is only there when the host is built with the library:
+
+    make sdl GLR=1 GLR_DIR=its/include GLR_LIB="path/to/its.a ..."
+
+(changing these variables rebuilds what they touch, nothing has to be removed). The library's calls go
+in `host/renderer_gl.cpp`, at the lines marked `LIB:`; in that mode `game_frame()` is not called,
+so the host plays the engine sound and handles Tab, Q, `[`, `]` and F9 itself. What is still to do
+for it is in [TODO-lib.md](TODO-lib.md).
+
 Sound: the game writes the AdLib (OPL2) registers as the original did to ports 388h/389h
 (`src/sound.cpp`: an engine voice per view and the crash effect); the SDL host plays them through
 [Nuked-OPL3](https://github.com/nukeykt/Nuked-OPL3) (LGPL 2.1, a git submodule), an emulator of
@@ -49,7 +66,7 @@ Minimap ("Minimap" in the map chooser, off by default, or `-m` / `--minimap`): t
 the map semi-transparent in the bottom right corner, each cell in its colour and darker where it
 is low, with a square in a colour of its own and the number of each car (in the game's font) where
 its reference point is; x is to the right and y down, so a camera turned to yaw 0 looks up the
-minimap. It is drawn over the game's picture with the SDL renderer (`host/minimap.cpp`), so the
+minimap. It is drawn over the game's picture through ImGui (`host/minimap.cpp`), so the
 game's picture and the tests do not change.
 
 Without a map directory, `terep2` first opens a map chooser (Dear ImGui): the directories
@@ -136,6 +153,10 @@ host/
   host.hpp      what the hosts share
   common.cpp    64 KB segments, creating the data segment, time step, case-insensitive file opening
   sdl_main.cpp  SDL2 host
+  gui.cpp       its window: one OpenGL 3.3 core context, with ImGui (OpenGL3 backend) on it
+  renderer_api.hpp  what an external OpenGL renderer gets: the context, the map's files and layers
+  game_renderer.cpp the renderers to choose from; renderer_sw.cpp (the game's picture),
+                renderer_gl.cpp (the external library, built with GLR=1)
   launcher.cpp  map chooser (Dear ImGui) shown when no map is given
   voxel_preview.cpp  the chooser's preview: the map's terrain in voxel space
   pcx.cpp       PCX reader for the preview (separate from the game's)
@@ -212,8 +233,8 @@ so the comparison with the original is still byte for byte. The title bug was fi
 The initial contents of the segment, which the original read from `data.bin`, are written by
 `dataseg_init()` (`src/dataseg_init.cpp`): texts and file names as strings, the font read from
 `src/font.pbm` (embedded in the executable with `#embed`), the surface, key and hull tables as
-arrays, the sine table computed. The atan table stays a constant because it is not an exactly
-rounded atan. DOS leftovers that nothing reads (XMS messages, an old sound sequence) are still
+arrays, the sine and atan tables computed (the original's atan table was made with π typed as
+3.14169; one entry, a rounding tie, is set by hand). DOS leftovers that nothing reads (XMS messages, an old sound sequence) are still
 there, so the segment comes out byte for byte identical to the original and the tests keep
 comparing against the asm.
 
@@ -247,6 +268,20 @@ of the bytecode (`tools/synth_model.py`, built from the map's own car file, so i
 in the repository); the demo's cars only use six of them. It also plays 300 frames on another map, frees everything and then
 runs the scenario again in the same process (`terep2-headless -p map:frames`), which has to give
 the same output as a fresh process.
+
+Recordings made with the Win16 port are replayed with `terep2-headless -R recdir mapdir`
+(`-C` instead of `-R` only compares, writing nothing). `recdir/record.txt` has one call per line,
+told apart by its first letter and made exactly as recorded at 1x: `init`, `P` (physics), `R`
+(render), `K: 0xcd` (key), `frame: name.pgm` and `frame_fnv1a_64: 0x...`.
+
+- Empty lines and lines starting with `#` are skipped. Before the first `init` nothing else is
+  allowed (`... before init`, an error); after it, other lines print `unhandled line: ...`.
+- `frame:` saves the frame buffer as `recdir/name_new.pgm` (P5, like the port's dumps) and
+  prints how it compares with `recdir/name.pgm`: the number of differing pixels and the
+  rectangle around them.
+- `frame_fnv1a_64:` compares the FNV-1a hash of the frame buffer; only mismatches are printed.
+
+The last line sums it up, and the exit code is 1 if any frame differs or has no original.
 
 ## Things found along the way
 

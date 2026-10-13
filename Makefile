@@ -2,56 +2,86 @@
 #   make            headless test host, terep2-headless (no dependencies)
 #   make sdl        SDL2 version (needs SDL2 development files and the host/imgui submodule)
 #   make test       compare the headless host with the recorded reference
+#   make -j8 ...    in parallel: every file is its own object in build/
 CXX      ?= c++
 CXXFLAGS ?= -O2 -g
 CXXFLAGS += -std=gnu++17 -fwrapv -Wall -Wno-address-of-packed-member -Wno-unused-result
+DEPFLAGS  = -MMD -MP                    # header (and #embed) dependencies, in the .d files
+
 GAME     := $(wildcard src/*.cpp)
-HEADERS  := $(wildcard src/*.hpp) src/dataseg.hpp host/host.hpp src/font.pbm
-HOST     := host/common.cpp
+GAME_OBJ := $(patsubst src/%.cpp,build/game/%.o,$(GAME))
+HOST_OBJ := build/host/common.o
+TEST_OBJ := $(patsubst host_test/%.cpp,build/test/%.o,$(wildcard host_test/*.cpp))
 
 all: terep2-headless
 
 src/dataseg.hpp: src/dataseg.def tools/gen_dataseg.py
 	python3 tools/gen_dataseg.py
 
-TEST     := $(wildcard host_test/*.cpp)
+build build/game build/host build/test build/sdl build/imgui/backends:
+	@mkdir -p $@
 
-terep2-headless: $(GAME) $(HOST) $(TEST) $(HEADERS) $(wildcard host_test/*.hpp) host_test/dsmask.h
-	$(CXX) $(CXXFLAGS) -o $@ $(GAME) $(HOST) $(TEST) -lm
+# The game and what the hosts share; dataseg.hpp is generated before anything is compiled.
+build/game/%.o: src/%.cpp | build/game src/dataseg.hpp
+	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -c -o $@ $<
+build/host/%.o: host/%.cpp | build/host src/dataseg.hpp
+	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -c -o $@ $<
+build/test/%.o: host_test/%.cpp | build/test src/dataseg.hpp
+	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -c -o $@ $<
 
-# The SDL host and its track chooser; Dear ImGui is the git submodule in host/imgui.
-SDL_HOST := host/sdl_main.cpp host/launcher.cpp host/voxel_preview.cpp host/pcx.cpp host/opl_sound.cpp host/minimap.cpp
+terep2-headless: $(GAME_OBJ) $(HOST_OBJ) $(TEST_OBJ)
+	$(CXX) $(CXXFLAGS) -o $@ $^ -lm
+
+# The SDL host and its map chooser (OpenGL 3.3); Dear ImGui is the git submodule in host/imgui.
+ifeq ($(OS),Windows_NT)
+GL_LIBS  := -lopengl32
+else
+GL_LIBS  := -lGL
+endif
+# The external OpenGL renderer (TODO-lib.md):
+#   make sdl GLR=1 GLR_DIR=its/include GLR_LIB="path/to/lib.a and what it needs"
+ifdef GLR
+GLR_FLAGS := -DTEREP2_GLR $(if $(GLR_DIR),-I$(GLR_DIR))
+endif
 IMGUI    := host/imgui
+OPL3     := host/Nuked-OPL3
+SDL_SRC  := sdl_main launcher voxel_preview pcx opl_sound minimap gui renderer_api \
+            game_renderer renderer_sw renderer_gl
+SDL_OBJ  := $(patsubst %,build/sdl/%.o,$(SDL_SRC))
+SDL_FLAGS = $(CXXFLAGS) $(GLR_FLAGS) $(shell sdl2-config --cflags) -I$(IMGUI) -I$(IMGUI)/backends -I$(OPL3)
 IMGUI_OBJ := $(patsubst $(IMGUI)/%.cpp,build/imgui/%.o,$(addprefix $(IMGUI)/,imgui.cpp imgui_draw.cpp \
-             imgui_tables.cpp imgui_widgets.cpp backends/imgui_impl_sdl2.cpp backends/imgui_impl_sdlrenderer2.cpp))
+             imgui_tables.cpp imgui_widgets.cpp backends/imgui_impl_sdl2.cpp backends/imgui_impl_opengl3.cpp))
 
 $(IMGUI)/imgui.h:
 	@echo "Dear ImGui is missing: git submodule update --init" >&2; false
-
-# Nuked-OPL3 (submodule in host/Nuked-OPL3, LGPL 2.1), the AdLib for the SDL host
-OPL3     := host/Nuked-OPL3
-
 $(OPL3)/opl3.h:
 	@echo "Nuked-OPL3 is missing: git submodule update --init" >&2; false
 
-build/opl3.o: $(OPL3)/opl3.c $(OPL3)/opl3.h
-	@mkdir -p build
-	$(CC) -O2 -c -o $@ $<
+# The SDL host's flags (GLR, GLR_DIR, GLR_LIB...), kept in a file that only changes when they
+# do: changing them rebuilds what they touch, with no need to remove anything by hand.
+build/sdl/flags: FORCE | build/sdl
+	@echo '$(SDL_FLAGS) | $(GLR_LIB)' | cmp -s - $@ || echo '$(SDL_FLAGS) | $(GLR_LIB)' > $@
+FORCE:
 
-build/imgui/%.o: $(IMGUI)/%.cpp $(IMGUI)/imgui.h
-	@mkdir -p $(dir $@)
-	$(CXX) -O2 -std=gnu++17 $$(sdl2-config --cflags) -I$(IMGUI) -c -o $@ $<
+build/sdl/%.o: host/%.cpp build/sdl/flags | build/sdl src/dataseg.hpp $(IMGUI)/imgui.h $(OPL3)/opl3.h
+	$(CXX) $(SDL_FLAGS) $(DEPFLAGS) -c -o $@ $<
+build/imgui/%.o: $(IMGUI)/%.cpp | build/imgui/backends $(IMGUI)/imgui.h
+	$(CXX) -O2 -std=gnu++17 $(shell sdl2-config --cflags) -I$(IMGUI) $(DEPFLAGS) -c -o $@ $<
+build/opl3.o: $(OPL3)/opl3.c | build $(OPL3)/opl3.h
+	$(CC) -O2 $(DEPFLAGS) -c -o $@ $<
 
 sdl: terep2
-terep2: $(GAME) $(HOST) $(SDL_HOST) $(wildcard host/*.hpp) $(HEADERS) $(IMGUI_OBJ) build/opl3.o
-	$(CXX) $(CXXFLAGS) $$(sdl2-config --cflags) -I$(IMGUI) -I$(IMGUI)/backends -I$(OPL3) -o $@ \
-		$(GAME) $(HOST) $(SDL_HOST) $(IMGUI_OBJ) build/opl3.o $$(sdl2-config --libs) -lm
+terep2: $(GAME_OBJ) $(HOST_OBJ) $(SDL_OBJ) $(IMGUI_OBJ) build/opl3.o build/sdl/flags
+	$(CXX) $(CXXFLAGS) -o $@ $(GAME_OBJ) $(HOST_OBJ) $(SDL_OBJ) $(IMGUI_OBJ) build/opl3.o \
+		$(GLR_LIB) $(shell sdl2-config --libs) $(GL_LIBS) -lm
 
 test: terep2-headless
 	sh tests/run_tests.sh
 
 clean:
 	rm -f terep2 terep2-headless
-	rm -rf build/imgui build/opl3.o
+	rm -rf build/game build/host build/test build/sdl build/imgui build/opl3.o build/opl3.d
 
-.PHONY: all sdl test clean
+-include $(wildcard build/*/*.d build/*.d build/imgui/backends/*.d)
+
+.PHONY: all sdl test clean FORCE

@@ -114,7 +114,7 @@ struct Decoder {
     uint32_t decode(uint32_t pc, ModelOp &o, bool *falls) const
     {
         uint8_t raw = rd8(pc++) & 0x1f;
-        o.op = (ModelOpcode)(raw <= OP_WHEEL || (raw >= OP_SORT2 && raw <= OP_JUMP_HIDDEN) ? raw : OP_END);
+        o.op = (ModelOpcode)(raw <= OP_WHEEL || (raw >= OP_SORT2 && raw <= OP_JUMP_HIDDEN) ? raw : (uint8_t)OP_END);
         *falls = o.op != OP_END && o.op != OP_JUMP;
         switch (o.op) {
         case OP_PIXEL:

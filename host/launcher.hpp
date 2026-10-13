@@ -9,6 +9,7 @@
 struct HostOptions {
     bool no_sound = false;          // "Disable sound": no audio device, no OPL emulator
     bool minimap = false;           // the map and the cars in the bottom right corner
+    int renderer = 0;               // index in game_renderers (game_renderer.hpp)
 };
 
 // Runs until the player picks a map (true, *map set) or closes the
@@ -16,4 +17,4 @@ struct HostOptions {
 // call) is, with it selected, or else in the current directory.  render_scale
 // and extra_options (see terep.hpp) are edited in place, so values given on the
 // command line show up as the initial ones; so do the host's options.
-bool launcher_run(SDL_Window *win, SDL_Renderer *ren, std::string *map, HostOptions *host);
+bool launcher_run(std::string *map, HostOptions *host);     // draws in the gui (gui.hpp)

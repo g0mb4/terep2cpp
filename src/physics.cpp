@@ -11,6 +11,8 @@
 #include <math.h>
 #include "terep.hpp"
 
+int broke_some_ice = 0;
+
 /* ------------------------------------------------------------------------
  * Controls
  * ---------------------------------------------------------------------- */
@@ -189,12 +191,13 @@ void Car::update_mid()
  * Springs
  * ---------------------------------------------------------------------- */
 
-/* CVTSS2SI: round to nearest, out-of-range gives 0x80000000. */
-static int32_t float_to_i32(float f)
+/* CVTSS2SI: round to nearest, value is clamped, if its a NaN, God help us. */
+static int32_t float_to_i32(double f)
 {
-    if (!(f > -2147483648.0f && f < 2147483648.0f))
-        return INT32_MIN;
-    return (int32_t)lrintf(f);
+    f = fmin(f, 2147483647.0);
+    f = fmax(f, -2147483648.0);
+
+    return (int32_t)lrint(f);
 }
 
 /* Split the impulse between both ends; the high byte of the flags makes
@@ -218,11 +221,11 @@ static void update_spring(CarVertex &a, CarVertex &b, CarSpring &s)
     /* length one step ahead: positions plus relative velocity */
     Vec3 ahead = d;
     ahead += a.vel - b.vel;
-    float fx = (float)ahead.x, fy = (float)ahead.y, fz = (float)ahead.z;
+    double fx = (double)ahead.x, fy = (double)ahead.y, fz = (double)ahead.z;
     fx *= fx;
     fy *= fy;
     fz *= fz;
-    int32_t len = float_to_i32(sqrtf((fy + fx) + fz)) >> 10;
+    int32_t len = float_to_i32(sqrt((fy + fx) + fz)) >> 10;
 
     int32_t rest = s.rest, force;
     if (rest < 0) {                     /* first tick: take the current length */
@@ -617,8 +620,10 @@ static void particles_update()
                 /* bug of the original (fixed with -E fix-ice-bug): at height 0
                  * the cell wraps to 255, a pillar that throws cars up */
                 uint8_t &h = heightmap()[(uint16_t)(((uint16_t)(y + 0x80) & 0xff00) | ((uint16_t)(x + 0x80) >> 8))];
-                if (h || !extra_options.fix_ice_bug)
+                if (h || !extra_options.fix_ice_bug){
                     h--;
+                    broke_some_ice = 1;
+                }
                 p.kind = Particle::DUST;
                 p.vel = { 0, 0, 10000 };
             }
