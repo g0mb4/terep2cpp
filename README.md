@@ -269,12 +269,19 @@ in the repository); the demo's cars only use six of them. It also plays 300 fram
 runs the scenario again in the same process (`terep2-headless -p map:frames`), which has to give
 the same output as a fresh process.
 
-Recordings made with the Win16 port are replayed with `terep2-headless -R recdir mapdir`.
-`recdir/record.txt` has one call per line (`init`, `physics`, `render`, `handleKey: 0xcd`,
-`frame: name.pgm`), made exactly as recorded at 1x. Empty lines and lines starting with `#` are skipped; before the first `init` nothing else is allowed (`... before init`, an error). After it, other lines print `unhandled line: ...` and are skipped. Each `frame:` line saves the frame buffer as
-`recdir/name_new.pgm` (P5, like the port's dumps; `-C` instead of `-R` only compares) and prints how it compares with
-`recdir/name.pgm`: the number of differing pixels and the rectangle around them. The last line
-sums it up, and the exit code is 1 if any frame differs or has no original.
+Recordings made with the Win16 port are replayed with `terep2-headless -R recdir mapdir`
+(`-C` instead of `-R` only compares, writing nothing). `recdir/record.txt` has one call per line,
+told apart by its first letter and made exactly as recorded at 1x: `init`, `P` (physics), `R`
+(render), `K: 0xcd` (key), `frame: name.pgm` and `frame_fnv1a_64: 0x...`.
+
+- Empty lines and lines starting with `#` are skipped. Before the first `init` nothing else is
+  allowed (`... before init`, an error); after it, other lines print `unhandled line: ...`.
+- `frame:` saves the frame buffer as `recdir/name_new.pgm` (P5, like the port's dumps) and
+  prints how it compares with `recdir/name.pgm`: the number of differing pixels and the
+  rectangle around them.
+- `frame_fnv1a_64:` compares the FNV-1a hash of the frame buffer; only mismatches are printed.
+
+The last line sums it up, and the exit code is 1 if any frame differs or has no original.
 
 ## Things found along the way
 
